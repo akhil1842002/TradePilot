@@ -1,0 +1,42 @@
+// NIFTY 50 & NIFTY Next 50 (NIFTY 100) constituent stocks
+// Source: NSE, updated July 2026
+
+const NIFTY_50 = [
+  'RELIANCE', 'TCS', 'HDFCBANK', 'INFY', 'ICICIBANK', 'BHARTIARTL', 'SBIN',
+  'ITC', 'KOTAKBANK', 'LT', 'HINDUNILVR', 'BAJFINANCE', 'AXISBANK', 'TITAN',
+  'MARUTI', 'SUNPHARMA', 'NTPC', 'ONGC', 'POWERGRID', 'WIPRO', 'HCLTECH',
+  'ADANIPORTS', 'ULTRACEMCO', 'TATAMOTORS', 'TATASTEEL', 'ASIANPAINT', 'NESTLE',
+  'M&M', 'COALINDIA', 'BAJAJFINSV', 'JSWSTEEL', 'HDFCLIFE', 'DRREDDY', 'HDFC',
+  'BEL', 'CIPLA', 'TECHM', 'GRASIM', 'APOLLOHOSP', 'SBILIFE', 'DIVISLAB',
+  'EICHERMOT', 'BRITANNIA', 'HEROMOTOCO', 'HINDALCO', 'BPCL', 'TRENT', 'ADANIENT',
+  'TATACONSUM', 'SHRIRAMFIN'
+];
+
+const NIFTY_NEXT_50 = [
+  'VEDL', 'PFC', 'GODREJCP', 'HAL', 'TVSMOTOR', 'CHOLAFIN', 'SIEMENS', 'VBL',
+  'ADANIGREEN', 'LTIM', 'ZOMATO', 'ICICIPRULI', 'PIDILITIND', 'AMBUJACEM',
+  'HAVELLS', 'BANKBARODA', 'DLF', 'ABB', 'CANBK', 'JINDALSTEL', 'INDIGO',
+  'GAIL', 'ZEEL', 'BIOCON', 'MOTHERSON', 'MARICO', 'BERGEPAINT', 'TORNTPHARM',
+  'DABUR', 'LUPIN', 'PAGEIND', 'AUROPHARMA', 'SRF', 'IRFC', 'LICI', 'BHARATFORG',
+  'YESBANK', 'PERSISTENT', 'IRCTC', 'MAXHEALTH', 'CUMMINSIND', 'POLYCAB',
+  'SUNDARMFIN', 'COLPAL', 'JUBLFOOD', 'PIIND', 'LALPATHLAB', 'ALKEM', 'ATGL', 'NHPC'
+];
+
+// Get stocks for a given index name
+function getIndexStocks(indexName) {
+  switch (indexName.toUpperCase()) {
+    case 'NIFTY50':
+    case 'NIFTY 50':
+      return NIFTY_50;
+    case 'NIFTYNEXT50':
+    case 'NIFTY NEXT 50':
+      return NIFTY_NEXT_50;
+    case 'NIFTY100':
+    case 'NIFTY 100':
+      return [...NIFTY_50, ...NIFTY_NEXT_50];
+    default:
+      return [];
+  }
+}
+
+module.exports = { NIFTY_50, NIFTY_NEXT_50, getIndexStocks };

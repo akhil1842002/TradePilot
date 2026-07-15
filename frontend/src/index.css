@@ -1,0 +1,469 @@
+@import "bootstrap/dist/css/bootstrap.min.css";
+
+:root {
+  --tp-bg: #111827;
+  --tp-sidebar: #1F2937;
+  --tp-card: #1E293B;
+  --tp-text: #F8FAFC;
+  --tp-success: #22C55E;
+  --tp-danger: #EF4444;
+  --tp-warning: #F59E0B;
+  --tp-info: #3B82F6;
+  --tp-purple: #8B5CF6;
+  --tp-hover: #334155;
+  --tp-border: #374151;
+}
+
+[data-theme="light"] {
+  --tp-bg: #f9fafb;
+  --tp-sidebar: #ffffff;
+  --tp-card: #ffffff;
+  --tp-text: #111827;
+  --tp-hover: #f3f4f6;
+  --tp-border: #e5e7eb;
+}
+
+[data-theme="light"] .text-muted {
+  color: #6b7280 !important;
+}
+
+[data-theme="light"] .form-label.text-muted,
+[data-theme="light"] label.text-muted {
+  color: #374151 !important;
+}
+
+[data-theme="light"] .tp-table th {
+  background-color: #f3f4f6 !important;
+  color: #1f2937 !important;
+  border-bottom: 2px solid #e5e7eb !important;
+}
+
+[data-theme="light"] .tp-table .text-muted {
+  color: #4b5563 !important;
+}
+
+[data-theme="light"] .terminal-card {
+  background-color: #f3f4f6;
+  border: 1px solid #d1d5db;
+  color: #0369a1 !important;
+}
+
+[data-theme="light"] .form-control,
+[data-theme="light"] .form-select {
+  background-color: #ffffff !important;
+  border: 1px solid #d1d5db !important;
+  color: #111827 !important;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  background-color: var(--tp-bg);
+  color: var(--tp-text);
+  font-family: 'Outfit', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Custom Scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: var(--tp-bg);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--tp-border);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--tp-hover);
+}
+
+/* Layout container */
+.app-container {
+  display: flex;
+  min-height: 100vh;
+  background-color: var(--tp-bg);
+}
+
+/* Main Content Area */
+.main-content {
+  flex: 1;
+  min-width: 0;
+  padding: 1.5rem;
+}
+
+/* Desktop: sidebar always visible (handled by spacer div in Sidebar.jsx) */
+@media (min-width: 992px) {
+  /* Sidebar slides in permanently on lg+ */
+  .sidebar-panel {
+    transform: translateX(0) !important;
+  }
+}
+
+/* Mobile padding */
+@media (max-width: 575.98px) {
+  .main-content {
+    padding: 0.75rem;
+  }
+}
+
+/* Card custom styles */
+.tp-card {
+  background-color: var(--tp-card);
+  border: 1px solid var(--tp-border);
+  border-radius: 12px;
+  padding: 1.25rem;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.tp-card:hover {
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.3), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+}
+
+/* ── Table – neutralise Bootstrap's internal table variables ─────── */
+.tp-table {
+  /* Reset Bootstrap's own table colour tokens so cells don't go black */
+  --bs-table-bg: transparent;
+  --bs-table-striped-bg: transparent;
+  --bs-table-hover-bg: var(--tp-hover);
+  --bs-table-active-bg: var(--tp-hover);
+  --bs-table-color: var(--tp-text);
+  --bs-table-border-color: var(--tp-border);
+
+  color: var(--tp-text) !important;
+  background-color: transparent !important;
+  border-color: var(--tp-border) !important;
+  margin-bottom: 0;
+}
+
+.tp-table thead tr {
+  background-color: var(--tp-sidebar) !important;
+}
+
+.tp-table th {
+  background-color: var(--tp-sidebar) !important;
+  color: var(--tp-text) !important;
+  font-weight: 600;
+  text-transform: uppercase;
+  font-size: 0.75rem;
+  letter-spacing: 0.05em;
+  padding: 0.75rem 1rem !important;
+  border-bottom: 2px solid var(--tp-border) !important;
+}
+
+/* Every cell background = card colour, not Bootstrap black */
+.tp-table tbody tr {
+  background-color: var(--tp-card) !important;
+}
+
+.tp-table td {
+  padding: 0.85rem 1rem !important;
+  background-color: transparent !important;   /* inherits from tr above */
+  border-bottom: 1px solid var(--tp-border) !important;
+  vertical-align: middle;
+  color: var(--tp-text);
+}
+
+.tp-table-row-hover:hover {
+  background-color: var(--tp-hover) !important;
+  cursor: pointer;
+}
+
+
+/* Badges styling */
+.badge-buy {
+  background-color: rgba(34, 197, 94, 0.15) !important;
+  color: var(--tp-success) !important;
+  border: 1px solid rgba(34, 197, 94, 0.3) !important;
+}
+
+.badge-hold {
+  background-color: rgba(59, 130, 246, 0.15) !important;
+  color: var(--tp-info) !important;
+  border: 1px solid rgba(59, 130, 246, 0.3) !important;
+}
+
+.badge-exit {
+  background-color: rgba(239, 68, 68, 0.15) !important;
+  color: var(--tp-danger) !important;
+  border: 1px solid rgba(239, 68, 68, 0.3) !important;
+}
+
+.badge-profit {
+  background-color: rgba(245, 158, 11, 0.15) !important;
+  color: var(--tp-warning) !important;
+  border: 1px solid rgba(245, 158, 11, 0.3) !important;
+}
+
+.badge-watch {
+  background-color: rgba(139, 92, 246, 0.15) !important;
+  color: var(--tp-purple) !important;
+  border: 1px solid rgba(139, 92, 246, 0.3) !important;
+}
+
+.badge-ignore {
+  background-color: rgba(156, 163, 175, 0.15) !important;
+  color: #9CA3AF !important;
+  border: 1px solid rgba(156, 163, 175, 0.3) !important;
+}
+
+/* Flash Animations */
+@keyframes flash-green {
+  0% { background-color: rgba(34, 197, 94, 0.25); }
+  100% { background-color: transparent; }
+}
+
+@keyframes flash-red {
+  0% { background-color: rgba(239, 68, 68, 0.25); }
+  100% { background-color: transparent; }
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.spin-icon {
+  animation: spin 0.8s linear infinite;
+}
+
+.flash-up {
+  animation: flash-green 0.8s ease-out;
+}
+
+.flash-down {
+  animation: flash-red 0.8s ease-out;
+}
+
+/* Glassmorphism panel */
+.tp-glass {
+  background: rgba(30, 41, 59, 0.7);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+/* Custom transitions */
+.smooth-transition {
+  transition: all 0.2s ease-in-out;
+}
+
+/* Terminal View style */
+.terminal-card {
+  font-family: 'Fira Code', 'Courier New', Courier, monospace;
+  background-color: #0b0f19;
+  border: 1px solid #1f293d;
+  color: #38bdf8;
+  border-radius: 8px;
+  padding: 1rem;
+  font-size: 0.85rem;
+  line-height: 1.5;
+}
+
+/* Active navigation item styling */
+.sidebar-link {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  color: #9CA3AF;
+  text-decoration: none;
+  padding: 0.75rem 1rem;
+  border-radius: 8px;
+  font-weight: 500;
+  transition: all 0.2s;
+}
+
+.sidebar-link:hover {
+  color: var(--tp-text);
+  background-color: var(--tp-hover);
+}
+
+.sidebar-link.active {
+  color: var(--tp-text);
+  background-color: var(--tp-hover);
+  border-left: 3px solid var(--tp-info);
+}
+
+/* Ticker Card Values */
+.ticker-value {
+  font-size: 1.15rem;
+  font-weight: 700;
+}
+
+/* High legibility color overrides for dark mode */
+.text-muted {
+  color: #AEB7C2 !important;
+}
+
+.form-label.text-muted,
+label.text-muted {
+  color: #CBD5E1 !important;
+}
+
+.tp-table th {
+  color: #F8FAFC !important; /* Fully clear header text */
+}
+
+.tp-table .text-muted {
+  color: #D1D5DB !important;
+}
+
+.terminal-card {
+  color: #38bdf8 !important;
+}
+
+/* Style overrides for inputs and select lists */
+.form-control, .form-select {
+  color: #F8FAFC !important;
+}
+.form-control::placeholder {
+  color: #6B7280 !important;
+}
+
+/* ─── Light Mode Global overrides ──────────────────────────────────── */
+[data-theme="light"] body {
+  color: #111827;
+}
+
+/* Lift dark-forced colours on basic text in light mode */
+[data-theme="light"] .text-white {
+  color: #111827 !important;
+}
+[data-theme="light"] .text-light {
+  color: #1f2937 !important;
+}
+[data-theme="light"] .text-muted {
+  color: #6b7280 !important;
+}
+
+/* Cards */
+[data-theme="light"] .tp-card {
+  background-color: #ffffff;
+  border-color: #e5e7eb;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+}
+
+/* Table rows */
+[data-theme="light"] .tp-table {
+  color: #111827 !important;
+}
+[data-theme="light"] .tp-table th {
+  background-color: #f9fafb !important;
+  color: #374151 !important;
+  border-bottom: 2px solid #e5e7eb !important;
+}
+[data-theme="light"] .tp-table td {
+  border-bottom: 1px solid #e5e7eb !important;
+}
+[data-theme="light"] .tp-table-row-hover:hover {
+  background-color: #f3f4f6 !important;
+}
+
+/* Form inputs */
+[data-theme="light"] .form-control,
+[data-theme="light"] .form-select {
+  background-color: #ffffff !important;
+  border: 1px solid #d1d5db !important;
+  color: #111827 !important;
+}
+[data-theme="light"] .form-control::placeholder {
+  color: #9ca3af !important;
+}
+
+/* Override Bootstrap's bg-dark utility inside light mode */
+[data-theme="light"] .bg-dark {
+  background-color: #f3f4f6 !important;
+  color: #111827 !important;
+}
+
+/* Connection status pill */
+[data-theme="light"] .border-secondary {
+  border-color: #d1d5db !important;
+}
+
+/* Glassmorphism panel */
+[data-theme="light"] .tp-glass {
+  background: rgba(255,255,255,0.85);
+  backdrop-filter: blur(12px);
+  border: 1px solid #e5e7eb;
+}
+
+/* Scrollbar */
+[data-theme="light"] ::-webkit-scrollbar-track {
+  background: #f9fafb;
+}
+[data-theme="light"] ::-webkit-scrollbar-thumb {
+  background: #d1d5db;
+}
+
+/* Terminal card */
+[data-theme="light"] .terminal-card {
+  background-color: #f0f9ff;
+  border: 1px solid #bae6fd;
+  color: #0369a1 !important;
+}
+
+/* ─── Responsive: Desktop sidebar always visible ──────────────────── */
+@media (min-width: 992px) {
+  /* Force sidebar open on desktop regardless of JS state */
+  .position-fixed[style*="translateX(-100%)"] {
+    transform: translateX(0) !important;
+  }
+}
+
+/* ─── Responsive: Small screens ──────────────────────────────────── */
+@media (max-width: 767.98px) {
+  /* Shrink card padding on mobile */
+  .tp-card {
+    padding: 1rem;
+    border-radius: 10px;
+  }
+
+  /* Table font smaller so it fits */
+  .tp-table th,
+  .tp-table td {
+    font-size: 0.78rem !important;
+    padding: 0.6rem 0.6rem !important;
+  }
+
+  /* Index cards full width on xs */
+  .ticker-value {
+    font-size: 1rem;
+  }
+
+  /* Terminal card font size */
+  .terminal-card {
+    font-size: 0.78rem;
+  }
+}
+
+@media (max-width: 575.98px) {
+  .tp-card {
+    padding: 0.85rem;
+  }
+
+  /* Stack row columns naturally */
+  .row > [class*="col-"] {
+    padding-left: 0.5rem;
+    padding-right: 0.5rem;
+  }
+}
+
+/* ── Live data pulse animation ── */
+@keyframes pulse-ring {
+  0% {
+    transform: scale(1);
+    opacity: 0.7;
+  }
+  100% {
+    transform: scale(3.5);
+    opacity: 0;
+  }
+}
+
+
+

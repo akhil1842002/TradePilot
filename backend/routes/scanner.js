@@ -27,11 +27,18 @@ router.post('/config', async (req, res) => {
 router.get('/index/:name', (req, res) => {
   try {
     const { getIndexStocks } = require('../config/indices');
-    const stocks = getIndexStocks(req.params.name);
-    if (stocks.length === 0) {
-      return res.status(404).json({ message: `Index '${req.params.name}' not found. Try NIFTY50, NIFTYNEXT50, or NIFTY100.` });
+    const indexName = req.params.name;
+
+    // INDIA VIX is a volatility index — no constituent stocks
+    if (indexName.toUpperCase() === 'INDIAVIX' || indexName.toUpperCase() === 'INDIA VIX') {
+      return res.json({ index: 'INDIA VIX', count: 0, stocks: [], message: 'INDIA VIX is a volatility index and has no constituent stocks.' });
     }
-    res.json({ index: req.params.name.toUpperCase(), count: stocks.length, stocks });
+
+    const stocks = getIndexStocks(indexName);
+    if (stocks.length === 0) {
+      return res.status(404).json({ message: `Index '${indexName}' not found. Try NIFTY50, NIFTYNEXT50, BANKNIFTY, NIFTYIT, NIFTYFMCG, NIFTYPHARMA, NIFTYMIDCAP, SENSEX, or NIFTY500.` });
+    }
+    res.json({ index: indexName.toUpperCase(), count: stocks.length, stocks });
   } catch (error) {
     res.status(500).json({ message: 'Error', error: error.message });
   }

@@ -1,16 +1,10 @@
 const express = require('express');
 const router = express.Router();
 const storageService = require('../services/storageService');
+const stockMaster = require('../services/stockMaster');
 
-// Map stock symbol to its sector (for stats calculation)
-const SYMBOL_SECTORS = {
-  'BEL': 'Defence', 'HAL': 'Defence',
-  'TCS': 'IT', 'INFY': 'IT',
-  'HDFCBANK': 'Bank', 'ICICIBANK': 'Bank', 'SBIN': 'Bank',
-  'RELIANCE': 'Energy', 'ITC': 'FMCG',
-  'TATAMOTORS': 'Auto', 'SUNPHARMA': 'Pharma',
-  'TATASTEEL': 'Metal', 'DLF': 'Realty', 'ZEEL': 'Media'
-};
+// Map stock symbol to its sector (from stock master)
+const SYMBOL_SECTORS = stockMaster.getSectorMap();
 
 router.get('/', async (req, res) => {
   try {

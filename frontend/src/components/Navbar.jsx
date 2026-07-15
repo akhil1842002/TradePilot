@@ -15,7 +15,9 @@ export const Navbar = () => {
     toggleTheme,
     toggleSidebar,
     tradeMode,
-    toggleTradeMode
+    toggleTradeMode,
+    searchQuery,
+    setSearchQuery
   } = useApp();
 
   const [currentTime, setCurrentTime] = useState(new Date());
@@ -44,17 +46,32 @@ export const Navbar = () => {
 
   const handleSearchSubmit = (e) => {
     e.preventDefault();
-    if (!searchVal) return;
-    const sym = searchVal.toUpperCase().trim();
+    const val = searchVal.trim();
+    if (!val) return;
+
+    const sym = val.toUpperCase();
     const found = stocks.find(s => s.symbol === sym);
+
     if (found) {
+      // Exact symbol match — go directly to stock detail
       setSelectedStock(sym);
       setActiveView('charts');
       setSearchVal('');
       setShowSearch(false);
+      setSearchQuery('');
     } else {
-      alert(`"${sym}" not found. Available: ${stocks.map(s => s.symbol).join(', ')}`);
+      // Partial match — set search query and navigate to scanner to show results
+      setSearchQuery(val);
+      setActiveView('scanner');
+      setSearchVal('');
+      setShowSearch(false);
     }
+  };
+
+  // Live-filter as user types (for scanner view)
+  const handleSearchChange = (e) => {
+    setSearchVal(e.target.value);
+    setSearchQuery(e.target.value); // live filter in scanner
   };
 
   const formattedTime = currentTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
@@ -115,7 +132,7 @@ export const Navbar = () => {
                 }}
                 placeholder="Search stock…"
                 value={searchVal}
-                onChange={e => setSearchVal(e.target.value)}
+                onChange={handleSearchChange}
                 autoFocus={showSearch}
               />
             </form>

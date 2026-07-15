@@ -1,42 +1,59 @@
-// NIFTY 50 & NIFTY Next 50 (NIFTY 100) constituent stocks
-// Source: NSE, updated July 2026
+// Indian stock market index constituent stocks
+// Source: stock_master.json (comprehensive stock master)
+// This file now delegates to the stock master service for all lookups.
 
-const NIFTY_50 = [
-  'RELIANCE', 'TCS', 'HDFCBANK', 'INFY', 'ICICIBANK', 'BHARTIARTL', 'SBIN',
-  'ITC', 'KOTAKBANK', 'LT', 'HINDUNILVR', 'BAJFINANCE', 'AXISBANK', 'TITAN',
-  'MARUTI', 'SUNPHARMA', 'NTPC', 'ONGC', 'POWERGRID', 'WIPRO', 'HCLTECH',
-  'ADANIPORTS', 'ULTRACEMCO', 'TATAMOTORS', 'TATASTEEL', 'ASIANPAINT', 'NESTLE',
-  'M&M', 'COALINDIA', 'BAJAJFINSV', 'JSWSTEEL', 'HDFCLIFE', 'DRREDDY', 'HDFC',
-  'BEL', 'CIPLA', 'TECHM', 'GRASIM', 'APOLLOHOSP', 'SBILIFE', 'DIVISLAB',
-  'EICHERMOT', 'BRITANNIA', 'HEROMOTOCO', 'HINDALCO', 'BPCL', 'TRENT', 'ADANIENT',
-  'TATACONSUM', 'SHRIRAMFIN'
-];
+const stockMaster = require('../services/stockMaster');
 
-const NIFTY_NEXT_50 = [
-  'VEDL', 'PFC', 'GODREJCP', 'HAL', 'TVSMOTOR', 'CHOLAFIN', 'SIEMENS', 'VBL',
-  'ADANIGREEN', 'LTIM', 'ZOMATO', 'ICICIPRULI', 'PIDILITIND', 'AMBUJACEM',
-  'HAVELLS', 'BANKBARODA', 'DLF', 'ABB', 'CANBK', 'JINDALSTEL', 'INDIGO',
-  'GAIL', 'ZEEL', 'BIOCON', 'MOTHERSON', 'MARICO', 'BERGEPAINT', 'TORNTPHARM',
-  'DABUR', 'LUPIN', 'PAGEIND', 'AUROPHARMA', 'SRF', 'IRFC', 'LICI', 'BHARATFORG',
-  'YESBANK', 'PERSISTENT', 'IRCTC', 'MAXHEALTH', 'CUMMINSIND', 'POLYCAB',
-  'SUNDARMFIN', 'COLPAL', 'JUBLFOOD', 'PIIND', 'LALPATHLAB', 'ALKEM', 'ATGL', 'NHPC'
-];
+// Legacy exports for backward compatibility — populated from stock_master.json
+let NIFTY_50 = [];
+let NIFTY_NEXT_50 = [];
+let BANKNIFTY = [];
+let NIFTY_IT = [];
+let NIFTY_FMCG = [];
+let NIFTY_PHARMA = [];
+let NIFTY_MIDCAP = [];
+let SENSEX = [];
+let NIFTY_500 = [];
+let NIFTY_SERVICE = [];
 
-// Get stocks for a given index name
-function getIndexStocks(indexName) {
-  switch (indexName.toUpperCase()) {
-    case 'NIFTY50':
-    case 'NIFTY 50':
-      return NIFTY_50;
-    case 'NIFTYNEXT50':
-    case 'NIFTY NEXT 50':
-      return NIFTY_NEXT_50;
-    case 'NIFTY100':
-    case 'NIFTY 100':
-      return [...NIFTY_50, ...NIFTY_NEXT_50];
-    default:
-      return [];
-  }
+function refreshCache() {
+  const ix = stockMaster.getIndexConstituents();
+  NIFTY_50       = ix.NIFTY_50;
+  NIFTY_NEXT_50  = ix.NIFTY_NEXT_50;
+  BANKNIFTY      = ix.BANKNIFTY;
+  NIFTY_IT       = ix.NIFTY_IT;
+  NIFTY_FMCG     = ix.NIFTY_FMCG;
+  NIFTY_PHARMA   = ix.NIFTY_PHARMA;
+  NIFTY_MIDCAP   = ix.NIFTY_MIDCAP;
+  SENSEX         = ix.SENSEX;
+  NIFTY_500      = ix.NIFTY_500;
+  NIFTY_SERVICE  = ix.NIFTY_SERVICE;
 }
 
-module.exports = { NIFTY_50, NIFTY_NEXT_50, getIndexStocks };
+// Get stocks for a given index name (delegates to stock master)
+function getIndexStocks(indexName) {
+  const stocks = stockMaster.getIndexStocks(indexName);
+  if (stocks.length > 0) return stocks;
+
+  // Fallback: legacy name mapping
+  const legacyMap = {
+    'NIFTY 100':   [...stockMaster.getIndexStocks('nifty50'), ...stockMaster.getIndexStocks('niftynext50')],
+    'NIFTY100':    [...stockMaster.getIndexStocks('nifty50'), ...stockMaster.getIndexStocks('niftynext50')],
+    'MIDCAP 100':  stockMaster.getIndexStocks('niftymidcap'),
+    'BANK NIFTY':  stockMaster.getIndexStocks('banknifty'),
+    'NIFTY IT':    stockMaster.getIndexStocks('niftyit'),
+    'NIFTY FMCG':  stockMaster.getIndexStocks('niftyfmcg'),
+    'NIFTY PHARMA': stockMaster.getIndexStocks('niftypharma'),
+    'SERVICE SECTOR': stockMaster.getIndexStocks('niftyservice'),
+  };
+  return legacyMap[indexName.toUpperCase()] || [];
+}
+
+// Refresh cache on first load
+refreshCache();
+
+module.exports = {
+  NIFTY_50, NIFTY_NEXT_50, BANKNIFTY, NIFTY_IT, NIFTY_FMCG,
+  NIFTY_PHARMA, NIFTY_MIDCAP, SENSEX, NIFTY_500, NIFTY_SERVICE,
+  getIndexStocks
+};

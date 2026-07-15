@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { createChart, ColorType } from 'lightweight-charts';
 import axios from 'axios';
-import { FaArrowUp, FaArrowDown, FaBriefcase, FaListUl, FaExchangeAlt } from 'react-icons/fa';
+import { FaArrowUp, FaArrowDown, FaBriefcase, FaListUl, FaExchangeAlt, FaStar, FaRegStar } from 'react-icons/fa';
 import { getEffectiveRec, getActionStyle } from '../utils/tradeLogic';
 
 export const StockDetail = () => {
@@ -13,7 +13,9 @@ export const StockDetail = () => {
     sectors,
     createTrade,
     setActiveView,
-    tradeMode
+    tradeMode,
+    toggleFavorite,
+    isFavorite
   } = useApp();
 
   const chartContainerRef = useRef(null);
@@ -166,9 +168,18 @@ export const StockDetail = () => {
   const totalDepth = stock.depth.totalBuyQuantity + stock.depth.totalSellQuantity;
   const buyDepthPct = totalDepth > 0 ? (stock.depth.totalBuyQuantity / totalDepth) * 100 : 50;
 
-  // Recommendation Badge style
-  const rec = getEffectiveRec(stock, tradeMode);
-  const terminalEmoji = rec.action === 'BUY' || rec.action === 'COVER PROFIT' ? '🟢' : (rec.action === 'EXIT' || rec.action === 'SHORT' ? '🔴' : (rec.action === 'BOOK PROFIT' || rec.action === 'HOLD SHORT' ? '🟠' : '🔵'));
+  // Recommendation Badge style — with fallback for missing fields
+  const rec = getEffectiveRec(stock, tradeMode) || {};
+  const safeRec = {
+    action: rec.action || 'HOLD',
+    confidence: rec.confidence ?? 50,
+    risk: rec.risk || 'MEDIUM',
+    target1: rec.target1 || Number((stock.price * 1.015).toFixed(2)),
+    target2: rec.target2 || Number((stock.price * 1.03).toFixed(2)),
+    stopLoss: rec.stopLoss || Number((stock.price * 0.985).toFixed(2)),
+    reasons: rec.reasons || ['Analyzing — waiting for live data...']
+  };
+  const terminalEmoji = safeRec.action === 'BUY' || safeRec.action === 'COVER PROFIT' ? '🟢' : (safeRec.action === 'EXIT' || safeRec.action === 'SHORT' ? '🔴' : (safeRec.action === 'BOOK PROFIT' || safeRec.action === 'HOLD SHORT' ? '🟠' : '🔵'));
 
   return (
     <div className="d-flex flex-column gap-4">
@@ -179,7 +190,20 @@ export const StockDetail = () => {
             <span className="fw-extrabold text-white fs-4">{stock.symbol}</span>
           </div>
           <div>
-            <h4 className="mb-0 fw-extrabold text-white">{stock.name}</h4>
+            <h4 className="mb-0 fw-extrabold text-white d-flex align-items-center gap-2">
+              {stock.name}
+              <span
+                onClick={() => toggleFavorite(stock.symbol)}
+                style={{ cursor: 'pointer', fontSize: '1.2rem' }}
+                title={isFavorite(stock.symbol) ? 'Remove from favorites' : 'Add to favorites'}
+              >
+                {isFavorite(stock.symbol) ? (
+                  <FaStar style={{ color: '#F59E0B' }} />
+                ) : (
+                  <FaRegStar style={{ color: '#6B7280' }} />
+                )}
+              </span>
+            </h4>
             <span className="badge bg-secondary-subtle text-secondary border mt-1">{stock.sector} Sector</span>
           </div>
         </div>
@@ -212,8 +236,8 @@ export const StockDetail = () => {
           'EXIT':        { border: '#EF4444', bg: 'rgba(239,68,68,0.10)',  text: '#EF4444', emoji: '🔴' },
           'IGNORE':      { border: '#6B7280', bg: 'rgba(107,114,128,0.1)', text: '#9CA3AF', emoji: '⚪' },
         };
-        const style = actionStyles[rec.action] || actionStyles['HOLD'];
-        const scoreColor = rec.confidence >= 75 ? '#22C55E' : rec.confidence >= 50 ? '#3B82F6' : '#EF4444';
+        const style = actionStyles[safeRec.action] || actionStyles['HOLD'];
+        const scoreColor = safeRec.confidence >= 75 ? '#22C55E' : safeRec.confidence >= 50 ? '#3B82F6' : '#EF4444';
 
         return (
           <div
@@ -238,17 +262,17 @@ export const StockDetail = () => {
                       justifyContent: 'center'
                     }}
                   >
-                    {style.emoji}  {rec.action}
+                    {style.emoji}  {safeRec.action}
                   </div>
                   <div className="mt-2">
                     <div className="d-flex align-items-center justify-content-between mb-1">
                       <small className="text-muted" style={{ fontSize: '0.7rem' }}>CONFIDENCE</small>
-                      <small className="fw-bold" style={{ color: scoreColor, fontSize: '0.8rem' }}>{rec.confidence}%</small>
+                      <small className="fw-bold" style={{ color: scoreColor, fontSize: '0.8rem' }}>{safeRec.confidence}%</small>
                     </div>
                     <div className="progress" style={{ height: '6px', backgroundColor: 'rgba(255,255,255,0.1)', width: '180px' }}>
                       <div
                         className="progress-bar"
-                        style={{ width: `${rec.confidence}%`, backgroundColor: scoreColor, transition: 'width 0.5s ease' }}
+                        style={{ width: `${safeRec.confidence}%`, backgroundColor: scoreColor, transition: 'width 0.5s ease' }}
                       />
                     </div>
                   </div>
@@ -261,12 +285,12 @@ export const StockDetail = () => {
                     className="badge px-3 py-2 rounded-pill fw-bold"
                     style={{
                       fontSize: '0.85rem',
-                      backgroundColor: rec.risk === 'LOW' ? 'rgba(34,197,94,0.15)' : rec.risk === 'HIGH' ? 'rgba(239,68,68,0.15)' : 'rgba(245,158,11,0.15)',
-                      color: rec.risk === 'LOW' ? '#22C55E' : rec.risk === 'HIGH' ? '#EF4444' : '#F59E0B',
-                      border: `1px solid ${rec.risk === 'LOW' ? '#22C55E' : rec.risk === 'HIGH' ? '#EF4444' : '#F59E0B'}`
+                      backgroundColor: safeRec.risk === 'LOW' ? 'rgba(34,197,94,0.15)' : safeRec.risk === 'HIGH' ? 'rgba(239,68,68,0.15)' : 'rgba(245,158,11,0.15)',
+                      color: safeRec.risk === 'LOW' ? '#22C55E' : safeRec.risk === 'HIGH' ? '#EF4444' : '#F59E0B',
+                      border: `1px solid ${safeRec.risk === 'LOW' ? '#22C55E' : safeRec.risk === 'HIGH' ? '#EF4444' : '#F59E0B'}`
                     }}
                   >
-                    {rec.risk} RISK
+                    {safeRec.risk} RISK
                   </span>
                 </div>
               </div>
@@ -278,34 +302,34 @@ export const StockDetail = () => {
                   style={{ backgroundColor: 'rgba(34,197,94,0.12)', border: '1px solid rgba(34,197,94,0.3)', minWidth: '110px' }}
                 >
                   <small className="text-muted d-block" style={{ fontSize: '0.65rem' }}>TARGET 1</small>
-                  <span className="fw-bold text-success" style={{ fontSize: '1rem' }}>₹{rec.target1}</span>
+                  <span className="fw-bold text-success" style={{ fontSize: '1rem' }}>₹{safeRec.target1.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
                 </div>
                 <div
                   className="px-3 py-2 rounded-3 text-center"
                   style={{ backgroundColor: 'rgba(34,197,94,0.08)', border: '1px solid rgba(34,197,94,0.2)', minWidth: '110px' }}
                 >
                   <small className="text-muted d-block" style={{ fontSize: '0.65rem' }}>TARGET 2</small>
-                  <span className="fw-bold text-success" style={{ fontSize: '1rem', opacity: 0.8 }}>₹{rec.target2}</span>
+                  <span className="fw-bold text-success" style={{ fontSize: '1rem', opacity: 0.8 }}>₹{safeRec.target2.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
                 </div>
                 <div
                   className="px-3 py-2 rounded-3 text-center"
                   style={{ backgroundColor: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.3)', minWidth: '110px' }}
                 >
                   <small className="text-muted d-block" style={{ fontSize: '0.65rem' }}>STOP LOSS</small>
-                  <span className="fw-bold text-danger" style={{ fontSize: '1rem' }}>₹{rec.stopLoss}</span>
+                  <span className="fw-bold text-danger" style={{ fontSize: '1rem' }}>₹{safeRec.stopLoss.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
                 </div>
               </div>
 
             </div>
 
             {/* Reasons row */}
-            {rec.reasons && rec.reasons.length > 0 && (
+            {safeRec.reasons && safeRec.reasons.length > 0 && (
               <div className="mt-3 pt-3" style={{ borderTop: `1px solid ${style.border}33` }}>
                 <small className="text-muted d-block mb-2" style={{ fontSize: '0.7rem', letterSpacing: '0.05em' }}>
                   ENGINE REASONING
                 </small>
                 <div className="d-flex flex-wrap gap-2">
-                  {rec.reasons.map((r, i) => (
+                  {safeRec.reasons.map((r, i) => (
                     <span
                       key={i}
                       className="badge rounded-pill px-3 py-1"
@@ -320,6 +344,37 @@ export const StockDetail = () => {
                       ✓ {r}
                     </span>
                   ))}
+                </div>
+              </div>
+            )}
+
+            {/* Multi-Timeframe Confirmation */}
+            {stock.multiTf && (
+              <div className="mt-3 pt-3" style={{ borderTop: `1px solid ${style.border}33` }}>
+                <small className="text-muted d-block mb-2" style={{ fontSize: '0.7rem', letterSpacing: '0.05em' }}>
+                  🔄 MULTI-TIMEFRAME CONFIRMATION
+                </small>
+                <div className="d-flex gap-1 flex-wrap">
+                  {Object.entries(stock.multiTf).map(([tf, signal]) => {
+                    const tfColor = signal === 'BUY' ? '#22C55E' : signal === 'EXIT' ? '#EF4444' : '#F59E0B';
+                    const tfBg = signal === 'BUY' ? 'rgba(34,197,94,0.12)' : signal === 'EXIT' ? 'rgba(239,68,68,0.12)' : 'rgba(245,158,11,0.08)';
+                    return (
+                      <span
+                        key={tf}
+                        className="badge rounded-pill px-2 py-1 fw-bold"
+                        style={{
+                          backgroundColor: tfBg,
+                          color: tfColor,
+                          border: `1px solid ${tfColor}44`,
+                          fontSize: '0.7rem',
+                          minWidth: '50px',
+                          textAlign: 'center'
+                        }}
+                      >
+                        {tf} {signal}
+                      </span>
+                    );
+                  })}
                 </div>
               </div>
             )}

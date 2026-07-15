@@ -5,6 +5,8 @@ import MarketCards from './components/MarketCards';
 import DailyChecklist from './components/DailyChecklist';
 import SectorHeatmap from './components/SectorHeatmap';
 import MarketScanner from './components/MarketScanner';
+import MarketBreadth from './components/MarketBreadth';
+import MarketSummary from './components/MarketSummary';
 import StockDetail from './components/StockDetail';
 import OpenTrades from './components/OpenTrades';
 import TradeJournal from './components/TradeJournal';
@@ -28,6 +30,8 @@ export const App = () => {
               <div className="col-12 col-xl-6"><DailyChecklist /></div>
               <div className="col-12 col-xl-6"><SectorHeatmap /></div>
             </div>
+            <MarketSummary />
+            <MarketBreadth />
             <MarketScanner />
           </div>
         );

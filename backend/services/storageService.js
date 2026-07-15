@@ -243,6 +243,23 @@ const storageService = {
       fs.writeFileSync(p, JSON.stringify(updated, null, 2), 'utf8');
       return updated;
     }
+  },
+
+  // --- FAVORITES ---
+  async getFavorites() {
+    const p = getFilePath('favorites.json');
+    try {
+      const data = JSON.parse(fs.readFileSync(p, 'utf8'));
+      return Array.isArray(data) ? data : [];
+    } catch {
+      return [];
+    }
+  },
+
+  async saveFavorites(symbols) {
+    const p = getFilePath('favorites.json');
+    fs.writeFileSync(p, JSON.stringify(symbols, null, 2), 'utf8');
+    return symbols;
   }
 };
 

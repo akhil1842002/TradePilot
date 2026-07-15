@@ -1,4 +1,4 @@
-import React, { createContext, useState, useEffect, useContext } from 'react';
+import React, { createContext, useState, useEffect, useContext, useCallback } from 'react';
 import axios from 'axios';
 
 const AppContext = createContext();
@@ -12,6 +12,8 @@ export const AppProvider = ({ children }) => {
   const [indices, setIndices] = useState({});
   const [sectors, setSectors] = useState({});
   const [checklist, setChecklist] = useState({});
+  const [breadth, setBreadth] = useState([]);
+  const [sectorScores, setSectorScores] = useState([]);
   const [isConnected, setIsConnected] = useState(false);
   const [isSimulation, setIsSimulation] = useState(true);
   const [connectionError, setConnectionError] = useState(null);
@@ -23,6 +25,8 @@ export const AppProvider = ({ children }) => {
   const [analytics, setAnalytics] = useState({});
   const [searchQuery, setSearchQuery] = useState('');
   const [activeSectorFilter, setActiveSectorFilter] = useState(null);
+  const [selectedIndex, setSelectedIndex] = useState(null);
+  const [selectedIndexStocks, setSelectedIndexStocks] = useState([]);
   const [alerts, setAlerts] = useState([]);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const toggleSidebar = () => setSidebarOpen(prev => !prev);
@@ -50,6 +54,54 @@ export const AppProvider = ({ children }) => {
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
   }, [theme]);
+
+  // Favorites — persisted to backend + localStorage cache
+  const [favorites, setFavorites] = useState(() => {
+    try {
+      const saved = localStorage.getItem('tp-favorites');
+      return saved ? JSON.parse(saved) : [];
+    } catch { return []; }
+  });
+
+  // Fetch favorites from backend on mount (source of truth)
+  const fetchFavorites = async () => {
+    try {
+      const res = await axios.get(`${API_BASE}/favorites`);
+      if (res.data && Array.isArray(res.data)) {
+        setFavorites(res.data);
+        localStorage.setItem('tp-favorites', JSON.stringify(res.data));
+      }
+    } catch (e) {
+      console.error('Error fetching favorites from backend, using localStorage:', e.message);
+    }
+  };
+
+  // Save favorites to backend + localStorage
+  const saveFavoritesToBackend = async (symbols) => {
+    try {
+      await axios.post(`${API_BASE}/favorites`, { symbols });
+    } catch (e) {
+      console.error('Error saving favorites to backend:', e.message);
+    }
+  };
+
+  // Cache favorites to localStorage on every change
+  useEffect(() => {
+    localStorage.setItem('tp-favorites', JSON.stringify(favorites));
+  }, [favorites]);
+
+  const toggleFavorite = useCallback((symbol) => {
+    setFavorites(prev => {
+      const next = prev.includes(symbol)
+        ? prev.filter(s => s !== symbol)
+        : [...prev, symbol];
+      // Save to backend (fire-and-forget)
+      saveFavoritesToBackend(next);
+      return next;
+    });
+  }, []);
+
+  const isFavorite = useCallback((symbol) => favorites.includes(symbol), [favorites]);
 
   // Fetch initial REST data
   const fetchWatchlists = async () => {
@@ -109,6 +161,33 @@ export const AppProvider = ({ children }) => {
     }
   };
 
+  // Fetch index constituent stocks from backend
+  const fetchIndexStocks = async (indexKey, indexName) => {
+    try {
+      const res = await axios.get(`${API_BASE}/scanner/index/${encodeURIComponent(indexKey)}`);
+      if (res.data && res.data.stocks && res.data.stocks.length > 0) {
+        setSelectedIndexStocks(res.data.stocks);
+        setSelectedIndex(indexName);
+        setActiveSectorFilter(null); // clear sector filter when viewing by index
+        setActiveView('scanner');
+        return;
+      }
+    } catch (e) {
+      console.error('Error fetching index stocks:', e);
+    }
+    // Fallback: if backend returns empty or errors (e.g., INDIA VIX), just navigate
+    setSelectedIndexStocks([]);
+    setSelectedIndex(null);
+    setActiveSectorFilter(null);
+    setActiveView('scanner');
+  };
+
+  // Clear index filter and return to sector-based view
+  const clearIndexFilter = () => {
+    setSelectedIndex(null);
+    setSelectedIndexStocks([]);
+  };
+
   // Run on mount
   useEffect(() => {
     fetchAuthStatus();
@@ -117,6 +196,7 @@ export const AppProvider = ({ children }) => {
     fetchOpenTrades();
     fetchJournalEntries();
     fetchAnalytics();
+    fetchFavorites();
   }, []);
 
   // Update specific elements periodically
@@ -162,14 +242,14 @@ export const AppProvider = ({ children }) => {
   }, []);
 
   // Dispatch desktop notification
-  const addAlert = (alert) => {
+  const addAlert = useCallback((alert) => {
     const newAlert = {
       id: Math.random().toString(),
       timestamp: new Date().toLocaleTimeString(),
       read: false,
       ...alert
     };
-    
+
     setAlerts((prev) => [newAlert, ...prev].slice(0, 50)); // Keep last 50 alerts
 
     // Desktop Notification if permitted
@@ -179,7 +259,7 @@ export const AppProvider = ({ children }) => {
         icon: '/favicon.ico'
       });
     }
-  };
+  }, []);
 
   // Add a manual open trade
   const createTrade = async (tradeData) => {
@@ -307,6 +387,10 @@ export const AppProvider = ({ children }) => {
       setSectors,
       checklist,
       setChecklist,
+      breadth,
+      setBreadth,
+      sectorScores,
+      setSectorScores,
       isConnected,
       setIsConnected,
       isSimulation,
@@ -330,6 +414,11 @@ export const AppProvider = ({ children }) => {
       setSearchQuery,
       activeSectorFilter,
       setActiveSectorFilter,
+      selectedIndex,
+      setSelectedIndex,
+      selectedIndexStocks,
+      fetchIndexStocks,
+      clearIndexFilter,
       alerts,
       addAlert,
       theme,
@@ -339,6 +428,9 @@ export const AppProvider = ({ children }) => {
       toggleSidebar,
       tradeMode,
       toggleTradeMode,
+      favorites,
+      toggleFavorite,
+      isFavorite,
       lastTickTime,
       setLastTickTime
     }}>

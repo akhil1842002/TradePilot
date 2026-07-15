@@ -3,7 +3,7 @@ import { useApp } from '../context/AppContext';
 import { FaArrowUp, FaArrowDown } from 'react-icons/fa';
 
 export const MarketCards = () => {
-  const { indices, setActiveView, setActiveSectorFilter } = useApp();
+  const { indices, fetchIndexStocks } = useApp();
 
   if (!indices || Object.keys(indices).length === 0) {
     return (
@@ -50,12 +50,9 @@ export const MarketCards = () => {
           <div
             key={item.key}
             className="col-6 col-md-4 col-lg-3"
-            onClick={() => {
-              setActiveSectorFilter(item.name);
-              setActiveView('scanner');
-            }}
+            onClick={() => fetchIndexStocks(item.key, item.name)}
             style={{ cursor: 'pointer' }}
-            title={`Click to see ${item.name} stocks`}
+            title={`Click to see ${item.name} constituent stocks`}
           >
             <div className={`tp-card h-100 smooth-transition ${flashClass}`}>
               <div className="text-muted fw-bold uppercase mb-1" style={{ fontSize: '0.7rem', letterSpacing: '0.05em' }}>

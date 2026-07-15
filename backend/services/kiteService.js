@@ -1,69 +1,9 @@
 const { KiteConnect, KiteTicker } = require('kiteconnect');
 const decisionEngine = require('./decisionEngine');
+const stockMaster = require('./stockMaster');
 
-// Sector mapping for known stocks (used to label stocks fetched from Zerodha)
-const SYMBOL_SECTORS = {
-  // Defence
-  'BEL': 'Defence', 'HAL': 'Defence',
-  // IT
-  'TCS': 'IT', 'INFY': 'IT', 'WIPRO': 'IT', 'HCLTECH': 'IT', 'TECHM': 'IT',
-  // Bank
-  'HDFCBANK': 'Bank', 'ICICIBANK': 'Bank', 'SBIN': 'Bank', 'KOTAKBANK': 'Bank',
-  'AXISBANK': 'Bank', 'BANKBARODA': 'Bank',
-  // NBFC
-  'BAJFINANCE': 'NBFC', 'BAJAJFINSV': 'NBFC', 'SHRIRAMFIN': 'NBFC', 'PFC': 'NBFC',
-  'CHOLAFIN': 'NBFC',
-  // Energy
-  'RELIANCE': 'Energy', 'NTPC': 'Energy', 'ONGC': 'Energy', 'POWERGRID': 'Energy',
-  'COALINDIA': 'Energy', 'BPCL': 'Energy', 'GAIL': 'Energy', 'ADANIGREEN': 'Energy',
-  // FMCG
-  'ITC': 'FMCG', 'HINDUNILVR': 'FMCG', 'NESTLE': 'FMCG', 'TATACONSUM': 'FMCG',
-  'BRITANNIA': 'FMCG', 'DABUR': 'FMCG', 'MARICO': 'FMCG', 'COLPAL': 'FMCG',
-  'GODREJCP': 'FMCG',
-  // Auto
-  'TATAMOTORS': 'Auto', 'MARUTI': 'Auto', 'M&M': 'Auto', 'BAJAJ-AUTO': 'Auto',
-  'EICHERMOT': 'Auto', 'HEROMOTOCO': 'Auto', 'TVSMOTOR': 'Auto',
-  // Pharma
-  'SUNPHARMA': 'Pharma', 'DRREDDY': 'Pharma', 'CIPLA': 'Pharma', 'DIVISLAB': 'Pharma',
-  'APOLLOHOSP': 'Pharma', 'BIOCON': 'Pharma', 'LUPIN': 'Pharma', 'AUROPHARMA': 'Pharma',
-  'ALKEM': 'Pharma', 'LALPATHLAB': 'Pharma', 'MAXHEALTH': 'Pharma',
-  // Metal
-  'TATASTEEL': 'Metal', 'JSWSTEEL': 'Metal', 'HINDALCO': 'Metal', 'JINDALSTEL': 'Metal',
-  'VEDL': 'Metal',
-  // Realty / Construction
-  'DLF': 'Realty', 'LT': 'Construction', 'ULTRACEMCO': 'Cement', 'GRASIM': 'Cement',
-  'AMBUJACEM': 'Cement',
-  // Media
-  'ZEEL': 'Media',
-  // Telecom
-  'BHARTIARTL': 'Telecom',
-  // Consumer
-  'TITAN': 'Consumer', 'ASIANPAINT': 'Consumer', 'HAVELLS': 'Consumer',
-  'BERGEPAINT': 'Consumer', 'PIDILITIND': 'Consumer',
-  // Insurance
-  'HDFCLIFE': 'Insurance', 'SBILIFE': 'Insurance', 'ICICIPRULI': 'Insurance', 'LICI': 'Insurance',
-  // Ports / Logistics
-  'ADANIPORTS': 'Logistics', 'ADANIENT': 'Logistics',
-  // Others
-  'TRENT': 'Retail', 'VBL': 'Retail', 'ZOMATO': 'Tech', 'LTIM': 'IT',
-  'INDIGO': 'Aviation', 'IRCTC': 'Railways', 'IRFC': 'Finance',
-  'SIEMENS': 'Capital Goods', 'ABB': 'Capital Goods', 'BHARATFORG': 'Capital Goods',
-  'CUMMINSIND': 'Capital Goods', 'POLYCAB': 'Capital Goods',
-  'PIIND': 'Chemicals', 'SRF': 'Chemicals', 'PERSISTENT': 'IT',
-  'JUBLFOOD': 'Food', 'PAGEIND': 'Textiles', 'SUNDARMFIN': 'NBFC',
-  'MOTHERSON': 'Auto', 'TORNTPHARM': 'Pharma', 'ATGL': 'Energy', 'NHPC': 'Energy',
-  'HDFC': 'Bank', 'CANBK': 'Bank', 'YESBANK': 'Bank', 'UNIONBANK': 'Bank',
-  // Telecom
-  'BHARTIARTL': 'Telecom', 'IDEA': 'Telecom', 'HFCL': 'Telecom',
-  // Power
-  'ADANIPOWER': 'Power', 'JPPOWER': 'Power', 'NLCINDIA': 'Power',
-  'NTPCGREEN': 'Power', 'SUZLON': 'Power',
-  // Misc
-  'GMRAIRPORT': 'Infra', 'THOMASCOOK': 'Travel', 'OLAELEC': 'EV',
-  'SWIGGY': 'Food', 'MOTISONS': 'Finance',
-  'ETERNAL': 'Chemicals', 'VIDYAWIRES': 'Cables', 'SEPC': 'Engineering',
-  'PARACABLES': 'Cables', 'MEESHO': 'E-commerce',
-};
+// Sector mapping is now derived from stock_master.json at runtime
+const SYMBOL_SECTORS = stockMaster.getSectorMap();
 
 const DEFAULT_SCANNER_CONFIG = {
   vwap: true,
@@ -107,6 +47,7 @@ class KiteService {
     this.socketInterval = null;
     this.restPollInterval = null;
     this.dbService = null;
+    this.favoriteSymbols = new Set(); // prioritised for WebSocket subscription
   }
 
   initialize(io, dbService) {
@@ -158,10 +99,11 @@ class KiteService {
 
   // Initialize a single stock entry from live data
   initStock(symbol, price) {
-    const name = (SYMBOL_SECTORS[symbol] ? symbol : symbol) + ' Ltd';
+    const meta = stockMaster.enrich(symbol);
+    const now = new Date().toISOString();
     this.stocks[symbol] = {
       symbol,
-      name,
+      name: meta.name,
       price,
       open: price,
       high: price,
@@ -169,8 +111,12 @@ class KiteService {
       close: price,
       volume: 0,
       vwap: price,
-      sector: SYMBOL_SECTORS[symbol] || 'General',
-      history: [{ time: new Date().toISOString(), open: price, high: price, low: price, close: price, volume: 0, vwap: price }],
+      sector: meta.sector,
+      industry: meta.industry,
+      isin: meta.isin,
+      mcap: meta.mcap,
+      token: meta.token,
+      history: [{ time: now, open: price, high: price, low: price, close: price, volume: 0, vwap: price }],
       rsi: 50,
       ema20: price,
       ema50: price,
@@ -179,7 +125,16 @@ class KiteService {
       support: price * 0.97,
       resistance: price * 1.03,
       depth: { buy: [], sell: [], totalBuyQuantity: 0, totalSellQuantity: 0 },
-      recommendation: { action: 'HOLD', confidence: 50, reasons: ['Waiting for live data...'] }
+      recommendation: { action: 'HOLD', confidence: 50, reasons: ['Waiting for live data...'] },
+      // Multi-timeframe tracking
+      timeframes: {
+        '1m':  { candles: [{ time: now, open: price, high: price, low: price, close: price }], ema50: price, signal: 'HOLD' },
+        '5m':  { candles: [{ time: now, open: price, high: price, low: price, close: price }], ema50: price, signal: 'HOLD' },
+        '15m': { candles: [{ time: now, open: price, high: price, low: price, close: price }], ema50: price, signal: 'HOLD' },
+        '1h':  { candles: [{ time: now, open: price, high: price, low: price, close: price }], ema50: price, signal: 'HOLD' },
+        '1d':  { candles: [{ time: now, open: price, high: price, low: price, close: price }], ema50: price, signal: 'HOLD' },
+        '1w':  { candles: [{ time: now, open: price, high: price, low: price, close: price }], ema50: price, signal: 'HOLD' }
+      }
     };
   }
 
@@ -458,6 +413,246 @@ class KiteService {
     };
   }
 
+  // ── MARKET BREADTH ──────────────────────────────────────────
+  calculateMarketBreadth() {
+    const sectors = {};
+    const stocks = Object.values(this.stocks);
+
+    stocks.forEach(s => {
+      const sec = s.sector || 'General';
+      if (!sectors[sec]) {
+        sectors[sec] = {
+          sector: sec,
+          total: 0, rising: 0, falling: 0, unchanged: 0,
+          aboveEMA50: 0, rsiSum: 0,
+          priceChangeSum: 0,
+          stocks: []
+        };
+      }
+      const b = sectors[sec];
+      b.total++;
+      b.stocks.push(s.symbol);
+
+      // Rising / Falling
+      const change = s.price - s.close;
+      if (change > 0) b.rising++;
+      else if (change < 0) b.falling++;
+      else b.unchanged++;
+
+      // Above EMA50
+      if (s.ema50 && s.price > s.ema50) b.aboveEMA50++;
+
+      // RSI sum for average
+      b.rsiSum += (s.rsi || 50);
+
+      // Price change % for sector momentum
+      b.priceChangeSum += s.close > 0 ? ((s.price - s.close) / s.close) * 100 : 0;
+    });
+
+    // Calculate derived stats & trend per sector
+    const breadth = Object.values(sectors).map(b => {
+      const avgRSI = Math.round(b.rsiSum / b.total);
+      const aboveEMAPct = Math.round((b.aboveEMA50 / b.total) * 100);
+      const avgChange = +(b.priceChangeSum / b.total).toFixed(2);
+      const advancePct = Math.round((b.rising / b.total) * 100);
+
+      let trend = 'Neutral';
+      if (advancePct >= 65 && aboveEMAPct >= 65 && avgRSI >= 55) trend = 'Bullish';
+      else if (advancePct >= 55 && aboveEMAPct >= 50) trend = 'Moderately Bullish';
+      else if (advancePct <= 30 && aboveEMAPct <= 35 && avgRSI <= 45) trend = 'Bearish';
+      else if (advancePct <= 40 && aboveEMAPct <= 45) trend = 'Moderately Bearish';
+
+      return {
+        sector: b.sector,
+        total: b.total,
+        rising: b.rising,
+        falling: b.falling,
+        unchanged: b.unchanged,
+        advancePct,
+        aboveEMA50: b.aboveEMA50,
+        aboveEMA50Pct: aboveEMAPct,
+        avgRSI,
+        avgChange,
+        trend
+      };
+    });
+
+    // Sort: Bullish first, then by advance %
+    breadth.sort((a, b) => {
+      const trendOrder = { 'Bullish': 0, 'Moderately Bullish': 1, 'Neutral': 2, 'Moderately Bearish': 3, 'Bearish': 4 };
+      const tDiff = (trendOrder[a.trend] || 2) - (trendOrder[b.trend] || 2);
+      if (tDiff !== 0) return tDiff;
+      return b.advancePct - a.advancePct;
+    });
+
+    this.breadth = breadth;
+  }
+
+  // ── MULTI-TIMEFRAME SIGNALS ──────────────────────────────────
+  updateMultiTimeframe(symbol) {
+    const stock = this.stocks[symbol];
+    if (!stock) return;
+
+    const tfs = stock.timeframes;
+    const now = new Date().toISOString();
+    const p = stock.price;
+
+    // Timeframe config: [key, candleDurationMs, maxCandles]
+    const configs = [
+      ['1m',  60_000,   120],
+      ['5m',  300_000,  100],
+      ['15m', 900_000,  80],
+      ['1h',  3_600_000, 60],
+      ['1d',  86_400_000, 90],
+      ['1w',  604_800_000, 52]
+    ];
+
+    for (const [tf, duration, max] of configs) {
+      const tfData = tfs[tf];
+      if (!tfData) continue;
+
+      const candles = tfData.candles;
+      const lastCandle = candles[candles.length - 1];
+      const lastTime = new Date(lastCandle.time).getTime();
+
+      if (now - lastTime >= duration) {
+        // New candle
+        candles.push({ time: now, open: p, high: p, low: p, close: p });
+      } else {
+        // Update current candle
+        lastCandle.high = Math.max(lastCandle.high, p);
+        lastCandle.low = Math.min(lastCandle.low, p);
+        lastCandle.close = p;
+      }
+
+      // Trim to max
+      if (candles.length > max) tfData.candles = candles.slice(-max);
+
+      // Recalculate EMA50 for this timeframe
+      if (candles.length >= 5) {
+        const closes = candles.map(c => c.close);
+        tfData.ema50 = this.calculateEMA(closes, Math.min(50, closes.length));
+      }
+
+      // Determine signal based on price vs EMA50
+      if (tfData.ema50 && tfData.ema50 > 0) {
+        const pctAbove = ((p - tfData.ema50) / tfData.ema50) * 100;
+        if (pctAbove > 1) tfData.signal = 'BUY';
+        else if (pctAbove > 0.3) tfData.signal = 'HOLD';
+        else if (pctAbove > -0.3) tfData.signal = 'HOLD';
+        else if (pctAbove > -1) tfData.signal = 'EXIT';
+        else tfData.signal = 'EXIT';
+      }
+    }
+  }
+
+  /**
+   * Multi-timeframe confirmation score (0-100)
+   * Higher = more timeframes agree on bullish
+   */
+  getMultiTimeframeConfidence(symbol) {
+    const stock = this.stocks[symbol];
+    if (!stock?.timeframes) return 50;
+
+    const tfs = stock.timeframes;
+    const signals = Object.values(tfs).map(t => t.signal || 'HOLD');
+    const buyCount = signals.filter(s => s === 'BUY').length;
+    const holdCount = signals.filter(s => s === 'HOLD').length;
+    const exitCount = signals.filter(s => s === 'EXIT').length;
+
+    // Weight: BUY=+1, HOLD=0, EXIT=-1
+    const score = buyCount - exitCount;
+    const maxPossible = signals.length; // 6 timeframes
+
+    // Normalize to 0-100
+    const normalized = Math.round(50 + (score / maxPossible) * 50);
+    return Math.max(5, Math.min(95, normalized));
+  }
+
+  // ── SECTOR STRENGTH SCORES ───────────────────────────────────
+  calculateSectorScores() {
+    const sectors = {};
+    const stocks = Object.values(this.stocks);
+
+    stocks.forEach(s => {
+      const sec = s.sector || 'General';
+      if (!sectors[sec]) {
+        sectors[sec] = {
+          sector: sec,
+          total: 0,
+          aboveEMA50: 0,
+          rsiSum: 0,
+          advancers: 0,
+          decliners: 0,
+          mtfBullish: 0,
+          changeSum: 0
+        };
+      }
+      const b = sectors[sec];
+      b.total++;
+      if (s.ema50 && s.price > s.ema50) b.aboveEMA50++;
+      b.rsiSum += (s.rsi || 50);
+      if (s.price > s.close) b.advancers++;
+      else if (s.price < s.close) b.decliners++;
+      b.changeSum += s.close > 0 ? ((s.price - s.close) / s.close) * 100 : 0;
+
+      // Count multi-timeframe bullish confirmations
+      if (s.timeframes) {
+        const tfSignals = Object.values(s.timeframes).map(t => t.signal);
+        if (tfSignals.filter(x => x === 'BUY').length >= 4) b.mtfBullish++;
+      }
+    });
+
+    const scores = Object.values(sectors).map(b => {
+      const emaPct = Math.round((b.aboveEMA50 / b.total) * 100);
+      const avgRSI = Math.round(b.rsiSum / b.total);
+      const advPct = Math.round((b.advancers / b.total) * 100);
+      const avgChange = +(b.changeSum / b.total).toFixed(2);
+      const mtfPct = Math.round((b.mtfBullish / b.total) * 100);
+
+      // Composite score: 35% EMA, 25% RSI, 20% Advance, 10% MTF, 10% Change
+      let emaScore = 0;
+      if (emaPct >= 80) emaScore = 100;
+      else if (emaPct >= 60) emaScore = 75;
+      else if (emaPct >= 40) emaScore = 50;
+      else if (emaPct >= 20) emaScore = 25;
+      else emaScore = 5;
+
+      const rsiScore = Math.min(100, Math.max(0, ((avgRSI - 30) / 50) * 100));
+      const advScore = Math.min(100, Math.max(0, (advPct / 100) * 100));
+      const mtfScore = Math.min(100, mtfPct * 2);
+      const chgScore = Math.min(100, Math.max(0, 50 + avgChange * 10));
+
+      const composite = Math.round(
+        emaScore * 0.35 + rsiScore * 0.25 + advScore * 0.20 + mtfScore * 0.10 + chgScore * 0.10
+      );
+
+      // Trend from emaPct rules
+      let trend;
+      if (emaPct >= 80) trend = 'Strong Bullish 🟢';
+      else if (emaPct >= 60) trend = 'Bullish 🟢';
+      else if (emaPct >= 40) trend = 'Neutral 🟡';
+      else if (emaPct >= 20) trend = 'Bearish 🔴';
+      else trend = 'Strong Bearish 🔴';
+
+      return {
+        sector: b.sector,
+        total: b.total,
+        score: composite,
+        emaPct,
+        avgRSI,
+        advPct,
+        avgChange,
+        mtfBullishPct: mtfPct,
+        trend
+      };
+    });
+
+    // Sort by score descending
+    scores.sort((a, b) => b.score - a.score);
+    this.sectorScores = scores;
+  }
+
   // --- ZERODHA KITE CONNECT INTEGRATION ---
   initKiteConnect(apiKey, apiSecret, accessToken) {
     try {
@@ -506,24 +701,32 @@ class KiteService {
         this.isSimulation = false;
 
         // Fetch positions and build stock list first, then subscribe
-        this.fetchPositionsAndBuildStockList().then(() => {
-          // Stock instrument tokens — dynamically built from LTP response
-          // These are fallback mappings; actual tokens come from live data
-          const instrumentTokens = {
-            'BEL': 98049, 'TATASTEEL': 895745, 'ONGC': 633601, 'IRFC': 519425,
-            'YESBANK': 3050241, 'IDEA': 3677697, 'CANBK': 2763265, 'UNIONBANK': 2752769,
-            'SUZLON': 3076609, 'NLCINDIA': 2197761, 'ADANIPOWER': 4451329, 'HFCL': 5619457,
-            'JPPOWER': 3011329, 'THOMASCOOK': 891137, 'NTPCGREEN': 6957057,
-            'MOTISONS': 5321729, 'ETERNAL': 1304833, 'VIDYAWIRES': 194617345,
-            'SEPC': 3918849, 'GMRAIRPORT': 3463169, 'OLAELEC': 6342913,
-            'PARACABLES': 3571457, 'SWIGGY': 6928897, 'MEESHO': 194618625,
-            'TCS': 2953217, 'INFY': 408065, 'RELIANCE': 738561, 'HDFCBANK': 341249,
-            'HAL': 348293, 'SUNPHARMA': 857729, 'DLF': 3771393, 'ZEEL': 975617,
-            'ICICIBANK': 1270529, 'SBIN': 779521, 'ITC': 424961, 'TATAMOTORS': 884737
-          };
+        this.fetchPositionsAndBuildStockList().then(async () => {
+          // Stock instrument tokens — from instrument DB + stock master
+          let instrumentTokens = stockMaster.getTokenMap();
+
+          // Augment with instrument DB tokens if MongoDB is connected
+          try {
+            const instrumentService = require('./instrumentService');
+            const dbTokens = await instrumentService.getTokenMap();
+            instrumentTokens = { ...instrumentTokens, ...dbTokens };
+          } catch (e) { /* use stockMaster tokens only */ }
+
           const stockTokens = Object.entries(instrumentTokens)
             .filter(([sym]) => this.stocks[sym])
-            .map(([, tok]) => tok);
+            .map(([sym, tok]) => ({ sym, tok }));
+
+          // Prioritize favorites for WebSocket slots (Kite limit: ~200)
+          const favSet = this.favoriteSymbols;
+          stockTokens.sort((a, b) => {
+            const aFav = favSet.has(a.sym) ? 0 : 1;
+            const bFav = favSet.has(b.sym) ? 0 : 1;
+            return aFav - bFav; // favorites first
+          });
+
+          const wsTokens = stockTokens.slice(0, 200).map(s => s.tok);
+          const favInWS = stockTokens.slice(0, 200).filter(s => favSet.has(s.sym)).length;
+          console.log(`⭐ ${favInWS} favorites prioritized in WebSocket (${wsTokens.length} total slots)`);
 
           // Index instrument tokens (always subscribe)
           const indexTokens = {
@@ -534,11 +737,11 @@ class KiteService {
           };
           const idxToks = Object.values(indexTokens);
           
-          const tokens = [...stockTokens, ...idxToks];
+          const tokens = [...wsTokens, ...idxToks];
           if (tokens.length > 0) {
             this.ticker.setMode(this.ticker.modeFull, tokens);
             this.ticker.subscribe(tokens);
-            console.log(`Subscribed to ${tokens.length} instruments (${stockTokens.length} stocks + ${idxToks.length} indices) for live ticks.`);
+            console.log(`Subscribed to ${tokens.length} instruments (${wsTokens.length} stocks + ${idxToks.length} indices) for live ticks.`);
           }
 
           // Build reverse map for index tokens too
@@ -560,16 +763,27 @@ class KiteService {
                 symbol: s.symbol, name: s.name, price: s.price,
                 open: s.open, high: s.high, low: s.low, close: s.close,
                 volume: s.volume, vwap: Number(s.vwap.toFixed(2)),
-                sector: s.sector, rsi: Number(s.rsi.toFixed(2)),
+                sector: s.sector, industry: s.industry, isin: s.isin, mcap: s.mcap, token: s.token,
+                rsi: Number(s.rsi.toFixed(2)),
                 ema20: Number(s.ema20.toFixed(2)), ema50: Number(s.ema50.toFixed(2)),
                 macd: s.macd, adx: Number(s.adx.toFixed(2)),
                 support: Number(s.support.toFixed(2)),
                 resistance: Number(s.resistance.toFixed(2)),
-                depth: s.depth, recommendation: s.recommendation
+                depth: s.depth, recommendation: s.recommendation,
+                multiTf: s.timeframes ? {
+                  '1m': s.timeframes['1m']?.signal || 'HOLD',
+                  '5m': s.timeframes['5m']?.signal || 'HOLD',
+                  '15m': s.timeframes['15m']?.signal || 'HOLD',
+                  '1h': s.timeframes['1h']?.signal || 'HOLD',
+                  '1d': s.timeframes['1d']?.signal || 'HOLD',
+                  '1w': s.timeframes['1w']?.signal || 'HOLD'
+                } : null
               })),
               indices: this.marketIndices,
               sectors: this.sectorStrengths,
               checklist: this.checklist,
+              breadth: this.breadth,
+              sectorScores: this.sectorScores,
               isSimulation: false
             });
           }
@@ -641,10 +855,17 @@ class KiteService {
       console.log('📋 Fetching live positions & holdings from Zerodha...');
       
       // Get positions and holdings
-      const [positions, holdings] = await Promise.all([
-        this.kite.getPositions(),
-        this.kite.getHoldings()
-      ]);
+      let positions, holdings;
+      try {
+        [positions, holdings] = await Promise.all([
+          this.kite.getPositions(),
+          this.kite.getHoldings()
+        ]);
+      } catch (e) {
+        console.log('⚠️  Could not fetch positions/holdings:', e.message);
+        positions = { day: [], net: [] };
+        holdings = [];
+      }
 
       const trackedSymbols = new Set();
       
@@ -661,60 +882,73 @@ class KiteService {
         holdings.forEach(h => { if (h.tradingsymbol) trackedSymbols.add(h.tradingsymbol); });
       }
 
-      // Always include user-defined default watchlist stocks
-      const defaultWatchlist = [
-        'BEL', 'ETERNAL', 'VIDYAWIRES', 'SEPC', 'TATASTEEL', 'CANBK', 'GMRAIRPORT',
-        'OLAELEC', 'IDEA', 'YESBANK', 'IRFC', 'UNIONBANK', 'PARACABLES',
-        'ONGC', 'SWIGGY', 'ADANIPOWER', 'HFCL', 'MEESHO', 'JPPOWER',
-        'THOMASCOOK', 'NTPCGREEN', 'NLCINDIA', 'MOTISONS', 'SUZLON'
-      ];
-      defaultWatchlist.forEach(s => trackedSymbols.add(s));
-
-      // Also include major indices for market overview if no positions
-      if (trackedSymbols.size <= defaultWatchlist.length) {
-        ['TCS', 'INFY', 'RELIANCE', 'HDFCBANK', 'ICICIBANK', 'SBIN', 'ITC'].forEach(s => trackedSymbols.add(s));
+      // ── Load tracked symbols from instrument database ─────────────
+      // Try MongoDB first (instrumentService), fall back to stock_master.json
+      let dbSymbols = [];
+      try {
+        const instrumentService = require('./instrumentService');
+        // Get NIFTY 500 + any stocks in the DB that have enrichment data
+        const instruments = await instrumentService.query({ limit: 2000 });
+        dbSymbols = instruments.map(i => i.tradingsymbol);
+        console.log(`📊 Loaded ${dbSymbols.length} symbols from instrument database`);
+      } catch (e) {
+        // MongoDB not connected or no instruments — use stock master
+        dbSymbols = stockMaster.getAllSymbols();
+        console.log(`📊 Loaded ${dbSymbols.length} symbols from stock_master.json (DB fallback)`);
       }
 
-      console.log(`📋 Tracking ${trackedSymbols.size} symbols: ${[...trackedSymbols].join(', ')}`);
+      // Add DB symbols to tracked set
+      dbSymbols.forEach(s => trackedSymbols.add(s.toUpperCase()));
+
+      console.log(`📋 Tracking ${trackedSymbols.size} unique symbols`);
+
+      // Fetch initial prices in batches (Kite LTP limit: ~200 symbols per call)
+      const allSymbols = [...trackedSymbols];
+      const BATCH = 180;
       
-      // Fetch initial prices for all tracked symbols
-      const instruments = [...trackedSymbols].map(s => `NSE:${s}`);
-      const ltpData = await this.kite.getLTP(instruments);
-      
-      // Initialize stock entries
-      trackedSymbols.forEach(symbol => {
-        const key = `NSE:${symbol}`;
-        const price = ltpData[key]?.last_price || 0;
-        if (price > 0) {
-          this.initStock(symbol, price);
+      for (let i = 0; i < allSymbols.length; i += BATCH) {
+        const batch = allSymbols.slice(i, i + BATCH);
+        try {
+          const instruments = batch.map(s => `NSE:${s}`);
+          const ltpData = await this.kite.getLTP(instruments);
+          
+          batch.forEach(symbol => {
+            const key = `NSE:${symbol}`;
+            const price = ltpData[key]?.last_price || 0;
+            if (price > 0) {
+              this.initStock(symbol, price);
+            }
+          });
+        } catch (e) {
+          console.warn(`⚠️  LTP batch ${i / BATCH + 1} failed:`, e.message);
         }
-      });
+      }
 
       console.log(`✅ Initialized ${Object.keys(this.stocks).length} stocks with live prices`);
       this.isLiveReady = true;
       this.emitAuthStatus();
       
     } catch (err) {
-      console.error('Error fetching positions:', err.message);
-      console.log('⚠️  Using default watchlist as fallback');
-      const defaults = [
-        'BEL', 'ETERNAL', 'VIDYAWIRES', 'SEPC', 'TATASTEEL', 'CANBK', 'GMRAIRPORT',
-        'OLAELEC', 'IDEA', 'YESBANK', 'IRFC', 'UNIONBANK', 'PARACABLES',
-        'ONGC', 'SWIGGY', 'ADANIPOWER', 'HFCL', 'MEESHO', 'JPPOWER',
-        'THOMASCOOK', 'NTPCGREEN', 'NLCINDIA', 'MOTISONS', 'SUZLON',
-        'TCS', 'INFY', 'RELIANCE', 'HDFCBANK'
-      ];
+      console.error('Error building stock list:', err.message);
+      // Last-resort fallback: stock master JSON
+      console.log('⚠️  Using stock_master.json as last-resort fallback');
+      const defaults = stockMaster.getAllSymbols();
       try {
-        const instruments = defaults.map(s => `NSE:${s}`);
-        const ltpData = await this.kite.getLTP(instruments);
-        defaults.forEach(symbol => {
-          const key = `NSE:${symbol}`;
-          const price = ltpData[key]?.last_price || 0;
-          if (price > 0) this.initStock(symbol, price);
-        });
+        // Batch LTP calls
+        const BATCH = 180;
+        for (let i = 0; i < defaults.length; i += BATCH) {
+          const batch = defaults.slice(i, i + BATCH);
+          const instruments = batch.map(s => `NSE:${s}`);
+          const ltpData = await this.kite.getLTP(instruments);
+          batch.forEach(symbol => {
+            const key = `NSE:${symbol}`;
+            const price = ltpData[key]?.last_price || 0;
+            if (price > 0) this.initStock(symbol, price);
+          });
+        }
         this.isLiveReady = true;
         this.emitAuthStatus();
-        console.log(`✅ Initialized ${Object.keys(this.stocks).length} default stocks with live prices`);
+        console.log(`✅ Initialized ${Object.keys(this.stocks).length} stocks from stock_master.json`);
       } catch (e2) {
         console.error('❌ Could not fetch any stock data:', e2.message);
       }
@@ -722,20 +956,8 @@ class KiteService {
   }
 
   processKiteTicks(ticks) {
-    // Map instrument tokens back to symbols
-    const tokenToSymbol = {
-      98049: 'BEL', 348293: 'HAL', 2953217: 'TCS', 408065: 'INFY',
-      341249: 'HDFCBANK', 1270529: 'ICICIBANK', 779521: 'SBIN',
-      738561: 'RELIANCE', 424961: 'ITC', 884737: 'TATAMOTORS',
-      857729: 'SUNPHARMA', 895745: 'TATASTEEL', 3771393: 'DLF', 975617: 'ZEEL',
-      633601: 'ONGC', 519425: 'IRFC', 3050241: 'YESBANK', 3677697: 'IDEA',
-      2763265: 'CANBK', 2752769: 'UNIONBANK', 3076609: 'SUZLON',
-      2197761: 'NLCINDIA', 4451329: 'ADANIPOWER', 5619457: 'HFCL',
-      3011329: 'JPPOWER', 891137: 'THOMASCOOK', 6957057: 'NTPCGREEN',
-      5321729: 'MOTISONS', 1304833: 'ETERNAL', 194617345: 'VIDYAWIRES',
-      3918849: 'SEPC', 3463169: 'GMRAIRPORT', 6342913: 'OLAELEC',
-      3571457: 'PARACABLES', 6928897: 'SWIGGY', 194618625: 'MEESHO'
-    };
+    // Map instrument tokens back to symbols (from stock master)
+    const tokenToSymbol = stockMaster.getTokenToSymbolMap();
 
     const priceLog = [];
     ticks.forEach(tick => {
@@ -809,6 +1031,8 @@ class KiteService {
     // Regenerate sectors and checklist after processing all ticks
     this.recalculateSectors();
     this.recalculateChecklist();
+    this.calculateMarketBreadth();
+    this.calculateSectorScores();
 
     // Update open trade P&L with live prices
     this.updateOpenTradesPnL();
@@ -818,9 +1042,10 @@ class KiteService {
       let activeConfig = DEFAULT_SCANNER_CONFIG;
       try { activeConfig = await this.dbService.getScannerConfig(); } catch (e) {}
       Object.keys(this.stocks).forEach(symbol => {
+        this.updateMultiTimeframe(symbol);
         const stock = this.stocks[symbol];
         const dec = decisionEngine.evaluate(stock, this.checklist.marketTrend, this.sectorStrengths[stock.sector]?.changePercent || 0, activeConfig, 'LIVE-WS');
-        stock.recommendation = { action: dec.action, confidence: dec.confidence, reasons: dec.reasons };
+        stock.recommendation = { action: dec.action, confidence: dec.confidence, reasons: dec.reasons, risk: dec.risk, stopLoss: dec.stopLoss, target1: dec.target1, target2: dec.target2 };
       });
     })();
 
@@ -838,6 +1063,10 @@ class KiteService {
           volume: s.volume,
           vwap: Number(s.vwap.toFixed(2)),
           sector: s.sector,
+          industry: s.industry,
+          isin: s.isin,
+          mcap: s.mcap,
+          token: s.token,
           rsi: Number(s.rsi.toFixed(2)),
           ema20: Number(s.ema20.toFixed(2)),
           ema50: Number(s.ema50.toFixed(2)),
@@ -846,11 +1075,21 @@ class KiteService {
           support: Number(s.support.toFixed(2)),
           resistance: Number(s.resistance.toFixed(2)),
           depth: s.depth,
-          recommendation: s.recommendation
+          recommendation: s.recommendation,
+          multiTf: s.timeframes ? {
+            '1m': s.timeframes['1m']?.signal || 'HOLD',
+            '5m': s.timeframes['5m']?.signal || 'HOLD',
+            '15m': s.timeframes['15m']?.signal || 'HOLD',
+            '1h': s.timeframes['1h']?.signal || 'HOLD',
+            '1d': s.timeframes['1d']?.signal || 'HOLD',
+            '1w': s.timeframes['1w']?.signal || 'HOLD'
+          } : null
         })),
         indices: this.marketIndices,
         sectors: this.sectorStrengths,
         checklist: this.checklist,
+        breadth: this.breadth,
+        sectorScores: this.sectorScores,
         isSimulation: this.isSimulation
       });
     }
@@ -896,7 +1135,18 @@ class KiteService {
         ];
         const allInstruments = [...stockInstruments, ...indexInstruments];
         
-        const ltpData = await this.kite.getLTP(allInstruments);
+        // Kite LTP API limit: ~200 instruments per call — batch if needed
+        const LTP_BATCH = 180;
+        let ltpData = {};
+        for (let i = 0; i < allInstruments.length; i += LTP_BATCH) {
+          const batch = allInstruments.slice(i, i + LTP_BATCH);
+          try {
+            const batchData = await this.kite.getLTP(batch);
+            ltpData = { ...ltpData, ...batchData };
+          } catch (e) {
+            console.warn(`⚠️  LTP batch ${Math.floor(i / LTP_BATCH) + 1} failed:`, e.message);
+          }
+        }
         
         // Build price log line
         const priceLog = [];
@@ -948,6 +1198,8 @@ class KiteService {
 
         this.recalculateSectors();
         this.recalculateChecklist();
+        this.calculateMarketBreadth();
+        this.calculateSectorScores();
 
         // Update open trade P&L with live prices
         this.updateOpenTradesPnL();
@@ -957,10 +1209,11 @@ class KiteService {
         try { activeConfig = await this.dbService.getScannerConfig(); } catch (e) {}
         const updatedSignals = [];
         Object.keys(this.stocks).forEach(symbol => {
+          this.updateMultiTimeframe(symbol);
           const stock = this.stocks[symbol];
-          const oldRec = stock.recommendation.action;
+          const oldRec = stock.recommendation?.action;
           const dec = decisionEngine.evaluate(stock, this.checklist.marketTrend, this.sectorStrengths[stock.sector]?.changePercent || 0, activeConfig, 'LIVE-REST');
-          stock.recommendation = { action: dec.action, confidence: dec.confidence, reasons: dec.reasons };
+          stock.recommendation = { action: dec.action, confidence: dec.confidence, reasons: dec.reasons, risk: dec.risk, stopLoss: dec.stopLoss, target1: dec.target1, target2: dec.target2 };
           if (dec.action !== oldRec) {
             updatedSignals.push({ symbol, old: oldRec, new: dec.action, confidence: dec.confidence, reason: dec.reasons[0] });
           }
@@ -978,11 +1231,21 @@ class KiteService {
               macd: s.macd, adx: Number(s.adx.toFixed(2)),
               support: Number(s.support.toFixed(2)),
               resistance: Number(s.resistance.toFixed(2)),
-              depth: s.depth, recommendation: s.recommendation
+              depth: s.depth, recommendation: s.recommendation,
+              multiTf: s.timeframes ? {
+                '1m': s.timeframes['1m']?.signal || 'HOLD',
+                '5m': s.timeframes['5m']?.signal || 'HOLD',
+                '15m': s.timeframes['15m']?.signal || 'HOLD',
+                '1h': s.timeframes['1h']?.signal || 'HOLD',
+                '1d': s.timeframes['1d']?.signal || 'HOLD',
+                '1w': s.timeframes['1w']?.signal || 'HOLD'
+              } : null
             })),
             indices: this.marketIndices,
             sectors: this.sectorStrengths,
             checklist: this.checklist,
+            breadth: this.breadth,
+            sectorScores: this.sectorScores,
             isSimulation: false
           });
         }

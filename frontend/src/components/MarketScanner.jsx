@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
-import { FaSlidersH } from 'react-icons/fa';
+import { FaSlidersH, FaTimes, FaChevronLeft, FaChevronRight, FaStar, FaRegStar, FaSearch } from 'react-icons/fa';
 import ScannerSettingsModal from './ScannerSettingsModal';
 import { getEffectiveRec, getActionStyle } from '../utils/tradeLogic';
 
@@ -9,37 +9,70 @@ export const MarketScanner = () => {
     stocks,
     searchQuery,
     activeSectorFilter,
+    setActiveSectorFilter,
+    selectedIndex,
+    selectedIndexStocks,
+    clearIndexFilter,
     setSelectedStock,
     setActiveView,
-    tradeMode
+    tradeMode,
+    favorites,
+    toggleFavorite,
+    isFavorite,
+    setSearchQuery
   } = useApp();
 
   const [showSettings, setShowSettings] = useState(false);
   const [filterRec, setFilterRec] = useState('ALL');
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(50);
 
   const isSell = tradeMode === 'SELL';
 
   // Derive effective recommendation per stock based on tradeMode
-  const enriched = stocks.map(s => ({
+  const enriched = useMemo(() => stocks.map(s => ({
     ...s,
     effectiveRec: getEffectiveRec(s, tradeMode)
-  }));
+  })), [stocks, tradeMode]);
 
   // Build filter options per mode
-  const buyFilters  = ['ALL', 'BUY', 'HOLD', 'WATCH', 'BOOK PROFIT', 'EXIT', 'IGNORE'];
-  const sellFilters = ['ALL', 'SHORT', 'HOLD SHORT', 'WATCH SHORT', 'COVER PROFIT', 'COVER'];
+  const buyFilters  = ['ALL', 'FAVORITES', 'BUY', 'HOLD', 'WATCH', 'BOOK PROFIT', 'EXIT', 'IGNORE'];
+  const sellFilters = ['ALL', 'FAVORITES', 'SHORT', 'HOLD SHORT', 'WATCH SHORT', 'COVER PROFIT', 'COVER'];
   const filters = isSell ? sellFilters : buyFilters;
 
   // Reset filter when mode changes if current filter doesn't exist in new set
   const activeFilter = filters.includes(filterRec) ? filterRec : 'ALL';
 
-  const filteredStocks = enriched.filter(s => {
-    const matchSearch  = s.symbol.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                         s.name.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchSector  = activeSectorFilter ? s.sector === activeSectorFilter : true;
-    const matchRec     = activeFilter === 'ALL' ? true : s.effectiveRec?.action === activeFilter;
-    return matchSearch && matchSector && matchRec;
-  });
+  // Filter and sort — memoized so it only recomputes when inputs change
+  const sortedStocks = useMemo(() => {
+    const filtered = enriched.filter(s => {
+      const matchSearch  = s.symbol.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                           s.name.toLowerCase().includes(searchQuery.toLowerCase());
+      const matchSector  = activeSectorFilter ? s.sector === activeSectorFilter : true;
+      const matchIndex   = selectedIndexStocks.length > 0 ? selectedIndexStocks.includes(s.symbol) : true;
+      const matchRec     = activeFilter === 'ALL' ? true
+                        : activeFilter === 'FAVORITES' ? favorites.includes(s.symbol)
+                        : s.effectiveRec?.action === activeFilter;
+      return matchSearch && matchSector && matchIndex && matchRec;
+    });
+
+    return filtered.sort((a, b) => {
+      const confA = a.effectiveRec?.confidence ?? 0;
+      const confB = b.effectiveRec?.confidence ?? 0;
+      return confB - confA;
+    });
+  }, [enriched, searchQuery, activeSectorFilter, selectedIndexStocks, activeFilter]);
+
+  // Pagination
+  const totalPages = Math.max(1, Math.ceil(sortedStocks.length / pageSize));
+  const safePage = Math.min(page, totalPages);
+  const paginatedStocks = sortedStocks.slice((safePage - 1) * pageSize, safePage * pageSize);
+
+  // Reset to page 1 when filters change
+  useEffect(() => { setPage(1); }, [searchQuery, activeSectorFilter, selectedIndexStocks, activeFilter]);
+
+  // Top signal for the notice hero banner
+  const topSignal = sortedStocks.length > 0 ? sortedStocks[0] : null;
 
   const handleRowClick = (sym) => {
     setSelectedStock(sym);
@@ -93,6 +126,75 @@ export const MarketScanner = () => {
         </div>
 
         <div className="d-flex flex-wrap align-items-center gap-2">
+          {/* Search input */}
+          <div className="position-relative" style={{ width: '220px' }}>
+            <FaSearch
+              className="position-absolute"
+              style={{ left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#6B7280', fontSize: '0.8rem', pointerEvents: 'none' }}
+            />
+            <input
+              type="text"
+              className="form-control form-control-sm border-secondary ps-5"
+              placeholder="Search symbol or name..."
+              style={{
+                fontSize: '0.85rem',
+                backgroundColor: 'var(--tp-bg)',
+                color: 'var(--tp-text)',
+                borderColor: 'var(--tp-border)'
+              }}
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+            />
+            {searchQuery && (
+              <FaTimes
+                className="position-absolute"
+                style={{ right: '10px', top: '50%', transform: 'translateY(-50%)', cursor: 'pointer', color: '#6B7280', fontSize: '0.7rem' }}
+                onClick={() => setSearchQuery('')}
+                title="Clear search"
+              />
+            )}
+          </div>
+
+          {/* Show active index filter chip */}
+          {selectedIndex && (
+            <span
+              className="badge rounded-pill d-inline-flex align-items-center gap-2 px-3 py-2 fw-bold"
+              style={{
+                backgroundColor: 'rgba(59,130,246,0.15)',
+                color: '#3B82F6',
+                border: '1px solid rgba(59,130,246,0.4)',
+                fontSize: '0.8rem',
+                cursor: 'default'
+              }}
+            >
+              📊 {selectedIndex}
+              <FaTimes
+                style={{ cursor: 'pointer', fontSize: '0.7rem' }}
+                onClick={(e) => { e.stopPropagation(); clearIndexFilter(); }}
+                title="Clear index filter"
+              />
+            </span>
+          )}
+          {activeSectorFilter && (
+            <span
+              className="badge rounded-pill d-inline-flex align-items-center gap-2 px-3 py-2 fw-bold"
+              style={{
+                backgroundColor: 'rgba(34,197,94,0.12)',
+                color: '#22C55E',
+                border: '1px solid rgba(34,197,94,0.35)',
+                fontSize: '0.8rem',
+                cursor: 'default'
+              }}
+            >
+              🏷️ {activeSectorFilter}
+              <FaTimes
+                style={{ cursor: 'pointer', fontSize: '0.7rem' }}
+                onClick={(e) => { e.stopPropagation(); setActiveSectorFilter(null); }}
+                title="Clear sector filter"
+              />
+            </span>
+          )}
+
           <select
             className="form-select form-select-sm border-secondary"
             style={{ width: '190px', fontSize: '0.85rem', backgroundColor: 'var(--tp-bg)', color: 'var(--tp-text)' }}
@@ -114,11 +216,68 @@ export const MarketScanner = () => {
         </div>
       </div>
 
+      {/* ═══ TOP SIGNAL HERO BANNER ═══ */}
+      {topSignal && topSignal.effectiveRec && (() => {
+        const ts = topSignal;
+        const rec = ts.effectiveRec;
+        const s = getActionStyle(rec.action);
+        const scoreColor = rec.confidence >= 75 ? '#22C55E' : rec.confidence >= 50 ? '#3B82F6' : '#EF4444';
+        if (activeFilter !== 'ALL' && rec.action !== activeFilter) return null; // hide if filtered to specific action & top doesn't match
+        if (rec.action === 'IGNORE' || rec.action === 'HOLD') return null; // only show actionable signals
+
+        return (
+          <div
+            className="d-flex align-items-center gap-4 p-3 rounded-3 mb-3"
+            style={{
+              background: `linear-gradient(135deg, ${s.bg}, rgba(0,0,0,0.05))`,
+              border: `2px solid ${s.border}`,
+              cursor: 'pointer'
+            }}
+            onClick={() => handleRowClick(ts.symbol)}
+          >
+            <div className="d-flex align-items-center gap-3">
+              <div
+                className="d-flex align-items-center gap-2 px-3 py-2 rounded-pill"
+                style={{
+                  backgroundColor: s.bg,
+                  border: `2px solid ${s.border}`,
+                  color: s.color,
+                  fontWeight: 800,
+                  fontSize: '1.1rem'
+                }}
+              >
+                {s.emoji} {rec.action === 'BUY' ? 'TOP BUY SIGNAL' : rec.action === 'SHORT' ? 'TOP SHORT SIGNAL' : rec.action === 'EXIT' ? 'EXIT SIGNAL' : rec.action === 'BOOK PROFIT' ? 'BOOK PROFIT' : 'TOP SIGNAL'}
+              </div>
+              <div>
+                <span className="fw-bold text-white" style={{ fontSize: '1.2rem' }}>{ts.symbol}</span>
+                <span className="text-muted ms-2" style={{ fontSize: '0.85rem' }}>₹{ts.price.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+              </div>
+            </div>
+            <div className="d-flex align-items-center gap-3 ms-auto">
+              <div className="text-center">
+                <div className="fw-bold" style={{ color: scoreColor, fontSize: '1.3rem' }}>{rec.confidence}%</div>
+                <small className="text-muted" style={{ fontSize: '0.65rem' }}>CONFIDENCE</small>
+              </div>
+              <div className="text-center">
+                <div className="fw-bold text-white" style={{ fontSize: '0.9rem' }}>₹{rec.target1?.toLocaleString?.('en-IN', { minimumFractionDigits: 2 }) || rec.target1}</div>
+                <small className="text-muted" style={{ fontSize: '0.65rem' }}>TARGET</small>
+              </div>
+              <div className="text-center">
+                <div className="fw-bold text-white" style={{ fontSize: '0.9rem' }}>₹{rec.stopLoss?.toLocaleString?.('en-IN', { minimumFractionDigits: 2 }) || rec.stopLoss}</div>
+                <small className="text-muted" style={{ fontSize: '0.65rem' }}>STOP LOSS</small>
+              </div>
+              <span className="text-muted" style={{ fontSize: '0.7rem' }}>Click to view →</span>
+            </div>
+          </div>
+        );
+      })()}
+
       {/* Table */}
       <div className="table-responsive" style={{ maxHeight: '550px' }}>
         <table className="table tp-table table-hover">
           <thead>
             <tr>
+              <th style={{ width: '30px' }}></th>
               <th>Symbol</th>
               <th>Price</th>
               <th>Chg %</th>
@@ -135,14 +294,20 @@ export const MarketScanner = () => {
             </tr>
           </thead>
           <tbody>
-            {filteredStocks.length === 0 ? (
+            {sortedStocks.length === 0 ? (
               <tr>
-                <td colSpan="13" className="text-center text-muted py-5">
-                  No stocks match the current {isSell ? 'short' : 'long'} filter.
+                <td colSpan="14" className="text-center text-muted py-5">
+                  {selectedIndex && selectedIndexStocks.length === 0
+                    ? `INDIA VIX is a volatility index — it has no constituent stocks.`
+                    : selectedIndex && selectedIndexStocks.length > 0
+                      ? `No ${selectedIndex} stocks match the current filter. ${stocks.length === 0 ? '(Waiting for market data...)' : ''}`
+                      : stocks.length === 0
+                        ? 'Waiting for live market data... Connect Zerodha or check backend.'
+                        : `No stocks match the current ${isSell ? 'short' : 'long'} filter.`}
                 </td>
               </tr>
             ) : (
-              filteredStocks.map(stock => {
+              paginatedStocks.map(stock => {
                 const changeVal = stock.price - stock.close;
                 const changePct = ((changeVal / stock.close) * 100).toFixed(2);
                 const isUp = changeVal >= 0;
@@ -167,9 +332,20 @@ export const MarketScanner = () => {
                     key={stock.symbol}
                     className={`tp-table-row-hover smooth-transition ${flashClass}`}
                     style={{ backgroundColor: rowHighlight }}
-                    onClick={() => handleRowClick(stock.symbol)}
                   >
-                    <td className="fw-bold" style={{ color: 'var(--tp-text)' }}>
+                    <td
+                      className="text-center"
+                      onClick={(e) => { e.stopPropagation(); toggleFavorite(stock.symbol); }}
+                      style={{ cursor: 'pointer', padding: '8px 4px' }}
+                      title={isFavorite(stock.symbol) ? 'Remove from favorites' : 'Add to favorites'}
+                    >
+                      {isFavorite(stock.symbol) ? (
+                        <FaStar style={{ color: '#F59E0B', fontSize: '0.9rem' }} />
+                      ) : (
+                        <FaRegStar style={{ color: '#6B7280', fontSize: '0.9rem' }} />
+                      )}
+                    </td>
+                    <td className="fw-bold" style={{ color: 'var(--tp-text)' }} onClick={() => handleRowClick(stock.symbol)}>
                       <div>{stock.symbol}</div>
                       <small className="text-muted fw-normal" style={{ fontSize: '0.7rem' }}>{stock.name}</small>
                     </td>
@@ -222,6 +398,45 @@ export const MarketScanner = () => {
             )}
           </tbody>
         </table>
+      </div>
+
+      {/* ── Pagination ── */}
+      <div className="d-flex flex-wrap align-items-center justify-content-between mt-3 pt-3 border-top" style={{ borderColor: 'var(--tp-border)' }}>
+        <div className="d-flex align-items-center gap-3">
+          <span className="text-muted" style={{ fontSize: '0.8rem' }}>
+            Showing <strong style={{ color: 'var(--tp-text)' }}>{(safePage - 1) * pageSize + 1}–{Math.min(safePage * pageSize, sortedStocks.length)}</strong> of <strong style={{ color: 'var(--tp-text)' }}>{sortedStocks.length}</strong> stocks
+          </span>
+          <select
+            className="form-select form-select-sm border-secondary"
+            style={{ width: '80px', fontSize: '0.8rem', backgroundColor: 'var(--tp-bg)', color: 'var(--tp-text)' }}
+            value={pageSize}
+            onChange={e => { setPageSize(Number(e.target.value)); setPage(1); }}
+          >
+            <option value={25}>25</option>
+            <option value={50}>50</option>
+            <option value={100}>100</option>
+          </select>
+        </div>
+
+        <div className="d-flex align-items-center gap-2">
+          <button
+            className="btn btn-sm btn-outline-secondary"
+            disabled={safePage <= 1}
+            onClick={() => setPage(p => Math.max(1, p - 1))}
+          >
+            <FaChevronLeft />
+          </button>
+          <span className="text-muted px-2" style={{ fontSize: '0.85rem' }}>
+            Page <strong style={{ color: 'var(--tp-text)' }}>{safePage}</strong> of {totalPages}
+          </span>
+          <button
+            className="btn btn-sm btn-outline-secondary"
+            disabled={safePage >= totalPages}
+            onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+          >
+            <FaChevronRight />
+          </button>
+        </div>
       </div>
 
       {showSettings && <ScannerSettingsModal onClose={() => setShowSettings(false)} />}

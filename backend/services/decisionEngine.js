@@ -22,7 +22,10 @@ class DecisionEngine {
     if (config.ema20 !== false && config.ema50 !== false) {
       maxBullishScore += 15;
       maxBearishScore += 15;
-      if (stock.ema20 > stock.ema50) {
+      const diff = stock.ema20 - stock.ema50;
+      if (Math.abs(diff) < stock.price * 0.001) {
+        reasons.push('EMA20 ≈ EMA50 (Flat)');
+      } else if (stock.ema20 > stock.ema50) {
         score += 15;
         reasons.push('EMA20 > EMA50');
       } else {
@@ -53,9 +56,11 @@ class DecisionEngine {
       if (stock.macd && stock.macd.macd > stock.macd.signal) {
         score += 10;
         reasons.push('MACD Bullish Cross');
-      } else {
+      } else if (stock.macd && stock.macd.macd < stock.macd.signal) {
         score -= 10;
         reasons.push('MACD Bearish Crossover');
+      } else {
+        reasons.push('MACD Flat');
       }
     }
 

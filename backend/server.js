@@ -6,6 +6,7 @@ const cors = require('cors');
 const connectDB = require('./config/db');
 const storageService = require('./services/storageService');
 const kiteService = require('./services/kiteService');
+const instrumentService = require('./services/instrumentService');
 
 // Express App setup
 const app = express();
@@ -33,6 +34,33 @@ app.use('/api/watchlist', require('./routes/watchlist'));
 app.use('/api/scanner', require('./routes/scanner'));
 app.use('/api/analytics', require('./routes/analytics'));
 app.use('/api/auth', require('./routes/auth'));
+app.use('/api/favorites', require('./routes/favorites'));
+
+// Instrument DB routes (refresh, status)
+app.get('/api/instruments/refresh', async (req, res) => {
+  const result = await instrumentService.refreshDatabase();
+  res.json(result);
+});
+
+app.get('/api/instruments/status', (req, res) => {
+  res.json(instrumentService.getStatus());
+});
+
+app.get('/api/instruments/search', async (req, res) => {
+  try {
+    const { q, sector, mcap, index: indexName, limit } = req.query;
+    const results = await instrumentService.query({
+      symbols: q ? [q] : null,
+      sector: sector || null,
+      mcap: mcap || null,
+      indexName: indexName || null,
+      limit: Number(limit) || 100
+    });
+    res.json(results);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
 // Set up Socket.io
 const io = socketIo(server, {
@@ -46,6 +74,12 @@ const io = socketIo(server, {
 // Socket connection listener
 io.on('connection', (socket) => {
   // console.log(`Client connected: ${socket.id}`);
+
+  // Sync favorites from frontend → prioritise WebSocket slots
+  socket.on('update_favorites', (favorites) => {
+    kiteService.favoriteSymbols = new Set(favorites || []);
+    console.log(`⭐ Favorites synced: ${kiteService.favoriteSymbols.size} stocks prioritised for WebSocket`);
+  });
   
   // Send initial data to connected client
   socket.emit('init', {
@@ -72,6 +106,16 @@ const start = async () => {
   if (!isConnected) {
     console.log('Running backend service with JSON storage fallback.');
   }
+
+  // Refresh instrument database (from Kite API or stock_master.json fallback)
+  instrumentService.refreshDatabase().then(result => {
+    if (result.success) {
+      console.log(`📊 Instrument DB ready: ${result.total} stocks`);
+    }
+  });
+
+  // Start daily instrument refresh at 3:00 AM IST
+  instrumentService.startDailyRefresh(io);
 
   // Initialize Kite Live/Simulated feed
   kiteService.initialize(io, storageService);

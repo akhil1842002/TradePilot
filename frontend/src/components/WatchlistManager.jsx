@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import { FaTrash, FaPlus, FaEye, FaSync, FaChevronLeft, FaChevronRight } from 'react-icons/fa';
 import axios from 'axios';
+import ConfirmModal from './ConfirmModal';
 
 const API_BASE = 'http://localhost:5000/api';
 
@@ -20,6 +21,9 @@ export const WatchlistManager = () => {
   const [availableStocks, setAvailableStocks] = useState([]);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
+  const [syncing, setSyncing] = useState(false);
+  const [syncResult, setSyncResult] = useState(null);
+  const [syncConfirmModal, setSyncConfirmModal] = useState(false);
 
   // Fetch available stocks for autocomplete
   useEffect(() => {
@@ -56,17 +60,30 @@ export const WatchlistManager = () => {
   };
 
   // Sync watchlist with live Zerodha tracked stocks
-  const handleSyncPositions = async () => {
+  const handleSyncPositions = () => {
+    setSyncConfirmModal(true);
+  };
+
+  const handleSyncConfirm = async () => {
+    setSyncConfirmModal(false);
+    setSyncing(true);
+    setSyncResult(null);
     try {
       const res = await axios.post(`${API_BASE}/watchlist/sync`, { watchlistName: activeWatchlist });
-      alert(`✅ Synced ${res.data.count} stocks from live positions to "${activeWatchlist}"`);
+      setSyncResult({ success: true, message: `✅ Synced ${res.data.count} stocks from live positions to "${activeWatchlist}"` });
       // Refresh watchlists
-      const wlRes = await axios.get(`${API_BASE}/watchlist`);
-      // Trigger context update — we need to call the context's internal refresh
+      await axios.get(`${API_BASE}/watchlist`);
       window.location.reload();
     } catch (e) {
-      alert('❌ Sync failed: ' + (e.response?.data?.message || e.message));
+      setSyncResult({ success: false, message: '❌ Sync failed: ' + (e.response?.data?.message || e.message) });
+    } finally {
+      setSyncing(false);
+      setTimeout(() => setSyncResult(null), 5000);
     }
+  };
+
+  const handleSyncCancel = () => {
+    setSyncConfirmModal(false);
   };
 
   const wlStocksData = currentWl.stocks.map(sym => stocks.find(s => s.symbol === sym)).filter(Boolean);
@@ -102,13 +119,20 @@ export const WatchlistManager = () => {
             className="btn btn-sm w-100 mt-3 d-flex align-items-center justify-content-center gap-2"
             style={{ background: 'linear-gradient(135deg,#1e3a5f,#2563eb)', color: '#fff', border: 'none', fontSize: '0.8rem' }}
             onClick={handleSyncPositions}
+            disabled={syncing}
             title="Pull all live tracked stocks into this watchlist"
           >
-            <FaSync /> Sync Live Positions
+            <FaSync className={syncing ? 'spin-icon' : ''} /> {syncing ? 'Syncing...' : 'Sync Live Positions'}
           </button>
           <small className="text-muted d-block text-center mt-1" style={{ fontSize: '0.65rem' }}>
             {availableStocks.length} stocks available
           </small>
+
+          {syncResult && (
+            <div className={`alert py-2 px-3 mt-2 mb-0 border ${syncResult.success ? 'text-success border-success' : 'text-danger border-danger'}`} style={{ fontSize: '0.78rem', background: 'transparent' }}>
+              {syncResult.message}
+            </div>
+          )}
         </div>
       </div>
 
@@ -250,6 +274,18 @@ export const WatchlistManager = () => {
           </div>
         </div>
       </div>
+
+      {/* Sync Confirmation Modal */}
+      <ConfirmModal
+        show={syncConfirmModal}
+        title="Sync Live Positions"
+        message={`This will replace all stocks in "${activeWatchlist}" with your current live Zerodha tracked positions. Continue?`}
+        confirmLabel="Sync Now"
+        cancelLabel="Cancel"
+        variant="primary"
+        onConfirm={handleSyncConfirm}
+        onCancel={handleSyncCancel}
+      />
     </div>
   );
 };

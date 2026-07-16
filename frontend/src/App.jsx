@@ -5,6 +5,7 @@ import MarketCards from './components/MarketCards';
 import DailyChecklist from './components/DailyChecklist';
 import SectorHeatmap from './components/SectorHeatmap';
 import MarketScanner from './components/MarketScanner';
+import CircuitHitsPage from './components/CircuitHitsPage';
 import MarketBreadth from './components/MarketBreadth';
 import MarketSummary from './components/MarketSummary';
 import StockDetail from './components/StockDetail';
@@ -48,6 +49,7 @@ export const App = () => {
       case 'trades': return <OpenTrades />;
       case 'journal': return <TradeJournal />;
       case 'analytics': return <AnalyticsDashboard />;
+      case 'circuit-hits': return <CircuitHitsPage />;
       case 'portfolio':
         return (
           <div className="d-flex flex-column gap-4">

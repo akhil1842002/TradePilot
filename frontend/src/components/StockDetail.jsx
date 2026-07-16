@@ -517,7 +517,99 @@ export const StockDetail = () => {
 
         {/* Right Column - Decision Engine Terminal & Mock Order placement */}
         <div className="col-12 col-xl-4 d-flex flex-column gap-4">
-          
+
+          {/* ═══ UNUSUAL PRICE MOVEMENT PANEL ═══ */}
+          {stock.unusualMove && stock.unusualMove.opportunityScore >= 25 && (() => {
+            const um = stock.unusualMove;
+            const isSurge = um.type === 'SURGE';
+            const borderColor = um.opportunityScore >= 70 ? (isSurge ? '#22C55E' : '#EF4444') : '#F59E0B';
+            const bgColor = um.opportunityScore >= 70 ? (isSurge ? 'rgba(34,197,94,0.08)' : 'rgba(239,68,68,0.08)') : 'rgba(245,158,11,0.08)';
+            const sign = um.changePct >= 0 ? '+' : '';
+
+            return (
+              <div
+                className="tp-card"
+                style={{ border: `2px solid ${borderColor}88`, backgroundColor: bgColor }}
+              >
+                <div className="d-flex align-items-center gap-2 mb-2">
+                  <span style={{ fontSize: '1.6rem' }}>{um.emoji}</span>
+                  <h6 className="fw-bold text-white mb-0" style={{ fontSize: '0.95rem' }}>
+                    {um.label}
+                  </h6>
+                  <span className="ms-auto fw-bold" style={{ color: '#F59E0B', fontSize: '1.1rem' }}>{um.opportunityScore}/100</span>
+                </div>
+
+                <div className="d-flex flex-column gap-2 mt-2">
+                  {/* Price change */}
+                  <div className="d-flex justify-content-between align-items-center">
+                    <span className="text-muted" style={{ fontSize: '0.75rem' }}>Price Change</span>
+                    <span className="fw-bold" style={{ color: isSurge ? '#22C55E' : '#EF4444', fontSize: '1.1rem' }}>
+                      {sign}{um.changePct}% (₹{um.moveRupees})
+                    </span>
+                  </div>
+
+                  {/* ATR Ratio */}
+                  <div className="d-flex justify-content-between align-items-center">
+                    <span className="text-muted" style={{ fontSize: '0.75rem' }}>vs Normal Range (ATR)</span>
+                    <span className="fw-bold" style={{ color: um.atrRatio >= 2 ? '#F59E0B' : '#9CA3AF', fontSize: '0.85rem' }}>
+                      {um.atrRatio}× ATR (₹{um.atr})
+                    </span>
+                  </div>
+
+                  {/* Volume */}
+                  <div className="d-flex justify-content-between align-items-center">
+                    <span className="text-muted" style={{ fontSize: '0.75rem' }}>Volume vs Average</span>
+                    <span className="fw-bold" style={{ color: um.volumeRatio >= 2 ? '#F59E0B' : '#9CA3AF', fontSize: '0.85rem' }}>
+                      {um.volumeRatio}× {um.volumeRatio >= 3 ? '🔥' : ''}
+                    </span>
+                  </div>
+
+                  {/* Intraday Momentum */}
+                  <div className="d-flex justify-content-between align-items-center">
+                    <span className="text-muted" style={{ fontSize: '0.75rem' }}>Intraday Momentum (from open)</span>
+                    <span className="fw-bold" style={{ color: Math.abs(um.intradayPct) >= 0.5 ? (um.intradayPct >= 0 ? '#22C55E' : '#EF4444') : '#9CA3AF', fontSize: '0.85rem' }}>
+                      {um.intradayPct >= 0 ? '+' : ''}{um.intradayPct}%
+                    </span>
+                  </div>
+
+                  {/* Opportunity Score bar */}
+                  <div className="mt-2">
+                    <div className="d-flex justify-content-between mb-1">
+                      <small className="text-muted" style={{ fontSize: '0.65rem' }}>OPPORTUNITY SCORE</small>
+                      <small className="fw-bold" style={{ color: '#F59E0B', fontSize: '0.7rem' }}>{um.opportunityScore}/100</small>
+                    </div>
+                    <div className="progress" style={{ height: '6px', backgroundColor: 'rgba(255,255,255,0.1)' }}>
+                      <div
+                        className="progress-bar"
+                        style={{ width: `${um.opportunityScore}%`, backgroundColor: '#F59E0B', transition: 'width 0.5s ease' }}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Factor breakdown mini-bars */}
+                  <div className="mt-1 pt-2" style={{ borderTop: `1px solid ${borderColor}33` }}>
+                    <small className="text-muted d-block mb-2" style={{ fontSize: '0.6rem', letterSpacing: '0.05em' }}>
+                      FACTOR BREAKDOWN
+                    </small>
+                    {[
+                      { label: 'Price % (40%)', pct: Math.min(100, (Math.abs(um.changePct) / (um.typicalDailyPct || 0.5)) * 50), color: isSurge ? '#22C55E' : '#EF4444' },
+                      { label: 'Volume (25%)',  pct: Math.min(100, ((um.volumeRatio - 1) / 3) * 100), color: '#3B82F6' },
+                      { label: 'ATR Ratio (20%)', pct: Math.min(100, (um.atrRatio / 2.5) * 100), color: '#8B5CF6' },
+                      { label: 'Intraday (15%)', pct: Math.min(100, (Math.abs(um.intradayPct) / (um.typicalDailyPct || 0.5)) * 50), color: '#F59E0B' },
+                    ].map(f => (
+                      <div key={f.label} className="d-flex align-items-center gap-2 mb-1">
+                        <span className="text-muted" style={{ fontSize: '0.6rem', width: '100px', flexShrink: 0 }}>{f.label}</span>
+                        <div className="progress flex-grow-1" style={{ height: '4px', backgroundColor: 'rgba(255,255,255,0.06)' }}>
+                          <div className="progress-bar" style={{ width: `${Math.max(2, f.pct)}%`, backgroundColor: f.color }} />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
+
           {/* AI Decision Engine Terminal Card */}
           <div className="tp-card">
             <h6 className="fw-bold text-white mb-3">AI Decision Engine Output</h6>

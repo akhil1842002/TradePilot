@@ -68,6 +68,9 @@ export const MarketCards = () => {
                   {data.changePercent}%
                 </span>
               </div>
+              <div className="text-muted" style={{ fontSize: '0.7rem' }}>
+                {data.change >= 0 ? '+' : ''}{Number(data.change).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} pts
+              </div>
             </div>
           </div>
         );

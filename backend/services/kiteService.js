@@ -18,7 +18,8 @@ const DEFAULT_SCANNER_CONFIG = {
   resistance: true,
   relativeStrength: true,
   sectorStrength: true,
-  marketBreadth: true
+  marketBreadth: true,
+  unusualMove: true
 };
 
 class KiteService {
@@ -48,6 +49,8 @@ class KiteService {
     this.restPollInterval = null;
     this.dbService = null;
     this.favoriteSymbols = new Set(); // prioritised for WebSocket subscription
+    this.circuitHits = [];            // [{ symbol, type, price, changePct, time }]
+    this._priceTracker = {};          // symbol → { lastPrice, lastChangeTime, frozenSince }
   }
 
   initialize(io, dbService) {
@@ -702,6 +705,7 @@ class KiteService {
 
         // Fetch positions and build stock list first, then subscribe
         this.fetchPositionsAndBuildStockList().then(async () => {
+          await this._initIndexPrevClose();
           // Stock instrument tokens — from instrument DB + stock master
           let instrumentTokens = stockMaster.getTokenMap();
 
@@ -784,6 +788,7 @@ class KiteService {
               checklist: this.checklist,
               breadth: this.breadth,
               sectorScores: this.sectorScores,
+              circuitHits: this.circuitHits,
               isSimulation: false
             });
           }
@@ -955,6 +960,94 @@ class KiteService {
     }
   }
 
+  // ── Initialize index OHLC (one-time at startup) ────────────
+  async _initIndexPrevClose() {
+    if (!this.kite || this._indexPrevCloseInited) return;
+    this._indexPrevCloseInited = true;
+    try {
+      const idxInstruments = [
+        'NSE:NIFTY 50', 'BSE:SENSEX', 'NSE:NIFTY 500', 'NSE:NIFTY BANK',
+        'NSE:NIFTY IT', 'NSE:NIFTY MIDCAP 100', 'NSE:NIFTY FMCG',
+        'NSE:NIFTY PHARMA', 'NSE:NIFTY NEXT 50', 'NSE:NIFTY SERV SECTOR',
+        'NSE:INDIA VIX'
+      ];
+      const quotes = await this.kite.getQuote(idxInstruments);
+      const idxMap = {
+        'NSE:NIFTY 50': 'NIFTY50', 'BSE:SENSEX': 'SENSEX', 'NSE:NIFTY 500': 'NIFTY500',
+        'NSE:NIFTY BANK': 'BANKNIFTY', 'NSE:NIFTY IT': 'NIFTYIT',
+        'NSE:NIFTY MIDCAP 100': 'NIFTYMIDCAP', 'NSE:NIFTY FMCG': 'NIFTYFMCG',
+        'NSE:NIFTY PHARMA': 'NIFTYPHARMA', 'NSE:NIFTY NEXT 50': 'NIFTYNEXT50',
+        'NSE:NIFTY SERV SECTOR': 'NIFTYSERVICE', 'NSE:INDIA VIX': 'INDIAVIX'
+      };
+      Object.entries(quotes).forEach(([key, q]) => {
+        const name = idxMap[key];
+        if (name && this.marketIndices[name] && q?.ohlc?.close) {
+          this.marketIndices[name]._prevClose = q.ohlc.close;
+          this.marketIndices[name].price = q.last_price || q.ohlc.close;
+          this.marketIndices[name].change = this.marketIndices[name].price - q.ohlc.close;
+          this.marketIndices[name].changePercent = q.ohlc.close > 0
+            ? Number(((this.marketIndices[name].change / q.ohlc.close) * 100).toFixed(2)) : 0;
+        }
+      });
+      console.log('✅ Index previous close initialized from OHLC quotes');
+    } catch (e) {
+      console.warn('⚠️  Could not fetch index OHLC quotes:', e.message);
+      this._indexPrevCloseInited = false; // retry on next tick
+    }
+  }
+
+  // ── Shared Circuit Detection (used by both WS and REST) ──────
+  _detectCircuitHit(symbol, stock, price) {
+    const trk = this._priceTracker[symbol] || { lastPrice: price, lastChangeTime: Date.now(), frozenSince: null };
+    const nowTs = Date.now();
+    if (price !== trk.lastPrice) {
+      trk.lastPrice = price;
+      trk.lastChangeTime = nowTs;
+      trk.frozenSince = null;
+    } else if (!trk.frozenSince) {
+      trk.frozenSince = nowTs;
+    }
+    this._priceTracker[symbol] = trk;
+
+    // Real circuit detection: price frozen with zero volume at circuit limit
+    const frozenMs = trk.frozenSince ? (nowTs - trk.frozenSince) : 0;
+    const minFreezeMs = this.restPollInterval ? 30000 : 60000; // 30s REST, 60s WS
+    // Only flag if previous close is different from current price (stock has real OHLC data)
+    if (frozenMs > minFreezeMs && stock.close > 0 && Math.abs(price - stock.close) > 0.01) {
+      const chgPct = ((price - stock.close) / stock.close) * 100;
+      const absChg = Math.abs(chgPct);
+      // Common Indian circuit limits: 2%, 5%, 10%, 20% — detect ≥ 4.5%
+      const nearCircuit = absChg >= 4.5;
+      // Real circuit = no trading volume (frozen!)
+      const volumeIsZero = !stock.volume || stock.volume <= 10;
+      const alreadyRecorded = this.circuitHits.find(h => h.symbol === symbol && (nowTs - new Date(h.time).getTime() < 900000));
+
+      if (nearCircuit && volumeIsZero && !alreadyRecorded) {
+        const type = chgPct > 0 ? 'UPPER' : 'LOWER';
+        const hit = {
+          symbol,
+          name: stock.name,
+          type,
+          price,
+          changePct: Number(chgPct.toFixed(2)),
+          time: new Date().toISOString(),
+          sector: stock.sector
+        };
+        const today = new Date().toDateString();
+        if (this._circuitDate !== today) {
+          this.circuitHits = [];
+          this._circuitDate = today;
+        }
+        this.circuitHits.unshift(hit);
+        if (this.circuitHits.length > 100) this.circuitHits = this.circuitHits.slice(0, 100);
+        console.log(`🔒 CIRCUIT ${type}: ${symbol} @ ₹${price} (${chgPct >= 0 ? '+' : ''}${chgPct.toFixed(2)}%) — frozen ${Math.round(frozenMs/1000)}s, vol=${stock.volume}`);
+        if (this.io) {
+          this.io.emit('circuit_hit', hit);
+        }
+      }
+    }
+  }
+
   processKiteTicks(ticks) {
     // Map instrument tokens back to symbols (from stock master)
     const tokenToSymbol = stockMaster.getTokenToSymbolMap();
@@ -965,7 +1058,16 @@ class KiteService {
       if (this._indexTokenMap && this._indexTokenMap[tick.instrument_token]) {
         const idxName = this._indexTokenMap[tick.instrument_token];
         if (tick.last_price && this.marketIndices[idxName]) {
-          this.marketIndices[idxName].price = tick.last_price;
+          const idx = this.marketIndices[idxName];
+          // Use OHLC close (yesterday's close) if available from tick
+          if (tick.ohlc && tick.ohlc.close && tick.ohlc.close > 0) {
+            idx._prevClose = tick.ohlc.close;
+          } else if (!idx._prevClose || idx._prevClose === 0) {
+            idx._prevClose = tick.last_price;
+          }
+          idx.price = tick.last_price;
+          idx.change = idx.price - idx._prevClose;
+          idx.changePercent = idx._prevClose > 0 ? Number(((idx.change / idx._prevClose) * 100).toFixed(2)) : 0;
           priceLog.push(`${idxName}:₹${tick.last_price}`);
         }
         return;
@@ -994,6 +1096,9 @@ class KiteService {
         stock.price = tick.last_price;
         const arrow = tick.last_price > oldPrice ? '↑' : (tick.last_price < oldPrice ? '↓' : '·');
         priceLog.push(`${symbol}:₹${tick.last_price}${arrow}`);
+
+        // ── Circuit Hit Detection ──────────────────────────────
+        this._detectCircuitHit(symbol, stock, tick.last_price);
       }
       if (tick.ohlc) {
         stock.open = tick.ohlc.open;
@@ -1045,7 +1150,7 @@ class KiteService {
         this.updateMultiTimeframe(symbol);
         const stock = this.stocks[symbol];
         const dec = decisionEngine.evaluate(stock, this.checklist.marketTrend, this.sectorStrengths[stock.sector]?.changePercent || 0, activeConfig, 'LIVE-WS');
-        stock.recommendation = { action: dec.action, confidence: dec.confidence, reasons: dec.reasons, risk: dec.risk, stopLoss: dec.stopLoss, target1: dec.target1, target2: dec.target2 };
+        stock.recommendation = { action: dec.action, confidence: dec.confidence, reasons: dec.reasons, risk: dec.risk, stopLoss: dec.stopLoss, target1: dec.target1, target2: dec.target2, unusualMove: dec.unusualMove };
       });
     })();
 
@@ -1076,6 +1181,7 @@ class KiteService {
           resistance: Number(s.resistance.toFixed(2)),
           depth: s.depth,
           recommendation: s.recommendation,
+          unusualMove: s.recommendation?.unusualMove || null,
           multiTf: s.timeframes ? {
             '1m': s.timeframes['1m']?.signal || 'HOLD',
             '5m': s.timeframes['5m']?.signal || 'HOLD',
@@ -1090,6 +1196,7 @@ class KiteService {
         checklist: this.checklist,
         breadth: this.breadth,
         sectorScores: this.sectorScores,
+        circuitHits: this.circuitHits,
         isSimulation: this.isSimulation
       });
     }
@@ -1106,7 +1213,8 @@ class KiteService {
     this.emitAuthStatus();
 
     // Fetch positions and build stock list first
-    this.fetchPositionsAndBuildStockList().then(() => {
+    this.fetchPositionsAndBuildStockList().then(async () => {
+      await this._initIndexPrevClose();
       if (this.restPollInterval) return; // already cancelled
       this.startPollingLoop();
     });
@@ -1164,7 +1272,14 @@ class KiteService {
             'NSE:INDIA VIX': 'INDIAVIX'
           };
           if (idxMap[key] && data?.last_price) {
-            this.marketIndices[idxMap[key]].price = data.last_price;
+            const idx = this.marketIndices[idxMap[key]];
+            // Only set prevClose if not already initialized from OHLC
+            if (!idx._prevClose || idx._prevClose === 0) {
+              idx._prevClose = data.last_price;
+            }
+            idx.price = data.last_price;
+            idx.change = idx.price - idx._prevClose;
+            idx.changePercent = idx._prevClose > 0 ? Number(((idx.change / idx._prevClose) * 100).toFixed(2)) : 0;
             if (['NIFTY50', 'BANKNIFTY', 'SENSEX'].includes(idxMap[key])) {
               priceLog.push(`${idxMap[key]}:₹${data.last_price}`);
             }
@@ -1180,6 +1295,10 @@ class KiteService {
               stock.price = data.last_price;
               const arrow = data.last_price > oldPrice ? '↑' : (data.last_price < oldPrice ? '↓' : '·');
               priceLog.push(`${symbol}:₹${data.last_price}${arrow}`);
+
+              // ── Circuit Detection (REST polling) ──────────────
+              this._detectCircuitHit(symbol, stock, data.last_price);
+
               // Update latest candle
               const latest = stock.history[stock.history.length - 1];
               if (latest) {
@@ -1213,7 +1332,7 @@ class KiteService {
           const stock = this.stocks[symbol];
           const oldRec = stock.recommendation?.action;
           const dec = decisionEngine.evaluate(stock, this.checklist.marketTrend, this.sectorStrengths[stock.sector]?.changePercent || 0, activeConfig, 'LIVE-REST');
-          stock.recommendation = { action: dec.action, confidence: dec.confidence, reasons: dec.reasons, risk: dec.risk, stopLoss: dec.stopLoss, target1: dec.target1, target2: dec.target2 };
+          stock.recommendation = { action: dec.action, confidence: dec.confidence, reasons: dec.reasons, risk: dec.risk, stopLoss: dec.stopLoss, target1: dec.target1, target2: dec.target2, unusualMove: dec.unusualMove };
           if (dec.action !== oldRec) {
             updatedSignals.push({ symbol, old: oldRec, new: dec.action, confidence: dec.confidence, reason: dec.reasons[0] });
           }
@@ -1232,6 +1351,7 @@ class KiteService {
               support: Number(s.support.toFixed(2)),
               resistance: Number(s.resistance.toFixed(2)),
               depth: s.depth, recommendation: s.recommendation,
+              unusualMove: s.recommendation?.unusualMove || null,
               multiTf: s.timeframes ? {
                 '1m': s.timeframes['1m']?.signal || 'HOLD',
                 '5m': s.timeframes['5m']?.signal || 'HOLD',
@@ -1246,6 +1366,7 @@ class KiteService {
             checklist: this.checklist,
             breadth: this.breadth,
             sectorScores: this.sectorScores,
+            circuitHits: this.circuitHits,
             isSimulation: false
           });
         }

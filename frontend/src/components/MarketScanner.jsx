@@ -24,6 +24,7 @@ export const MarketScanner = () => {
 
   const [showSettings, setShowSettings] = useState(false);
   const [filterRec, setFilterRec] = useState('ALL');
+  const [filterUnusual, setFilterUnusual] = useState('ALL');
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(50);
 
@@ -53,7 +54,17 @@ export const MarketScanner = () => {
       const matchRec     = activeFilter === 'ALL' ? true
                         : activeFilter === 'FAVORITES' ? favorites.includes(s.symbol)
                         : s.effectiveRec?.action === activeFilter;
-      return matchSearch && matchSector && matchIndex && matchRec;
+      // Unusual move filter
+      const um = s.unusualMove;
+      const matchUnusual = filterUnusual === 'ALL' ? true
+                        : filterUnusual === 'ANY'     ? (um && um.opportunityScore >= 25)
+                        : filterUnusual === 'UNEXPECTED'  ? (um && um.opportunityScore >= 80)
+                        : filterUnusual === 'STRONG'      ? (um && um.opportunityScore >= 60 && um.opportunityScore < 80)
+                        : filterUnusual === 'NOTICEABLE'  ? (um && um.opportunityScore >= 40 && um.opportunityScore < 60)
+                        : filterUnusual === 'MINOR'       ? (um && um.opportunityScore >= 25 && um.opportunityScore < 40)
+                        : filterUnusual === 'NONE'        ? (!um || um.opportunityScore < 25)
+                        : true;
+      return matchSearch && matchSector && matchIndex && matchRec && matchUnusual;
     });
 
     return filtered.sort((a, b) => {
@@ -61,7 +72,7 @@ export const MarketScanner = () => {
       const confB = b.effectiveRec?.confidence ?? 0;
       return confB - confA;
     });
-  }, [enriched, searchQuery, activeSectorFilter, selectedIndexStocks, activeFilter]);
+  }, [enriched, searchQuery, activeSectorFilter, selectedIndexStocks, activeFilter, filterUnusual]);
 
   // Pagination
   const totalPages = Math.max(1, Math.ceil(sortedStocks.length / pageSize));
@@ -69,7 +80,7 @@ export const MarketScanner = () => {
   const paginatedStocks = sortedStocks.slice((safePage - 1) * pageSize, safePage * pageSize);
 
   // Reset to page 1 when filters change
-  useEffect(() => { setPage(1); }, [searchQuery, activeSectorFilter, selectedIndexStocks, activeFilter]);
+  useEffect(() => { setPage(1); }, [searchQuery, activeSectorFilter, selectedIndexStocks, activeFilter, filterUnusual]);
 
   // Top signal for the notice hero banner
   const topSignal = sortedStocks.length > 0 ? sortedStocks[0] : null;
@@ -206,6 +217,22 @@ export const MarketScanner = () => {
             ))}
           </select>
 
+          {/* Unusual Move Filter */}
+          <select
+            className="form-select form-select-sm border-secondary"
+            style={{ width: '160px', fontSize: '0.85rem', backgroundColor: 'var(--tp-bg)', color: 'var(--tp-text)' }}
+            value={filterUnusual}
+            onChange={e => setFilterUnusual(e.target.value)}
+          >
+            <option value="ALL">📊 All Moves</option>
+            <option value="ANY">⭐ Any Unusual</option>
+            <option value="UNEXPECTED">🚀 Unexpected (80+)</option>
+            <option value="STRONG">🔥 Strong (60+)</option>
+            <option value="NOTICEABLE">⚡ Noticeable (40+)</option>
+            <option value="MINOR">📊 Minor (25+)</option>
+            <option value="NONE">◻ No Unusual</option>
+          </select>
+
           <button
             className="btn btn-sm btn-outline-secondary d-flex align-items-center gap-2 px-3"
             style={{ fontSize: '0.85rem' }}
@@ -272,6 +299,48 @@ export const MarketScanner = () => {
         );
       })()}
 
+      {/* ═══ UNUSUAL PRICE MOVEMENT ALERTS ═══ */}
+      {(() => {
+        const unusualStocks = enriched.filter(s => s.unusualMove && s.unusualMove.opportunityScore >= 40);
+        if (unusualStocks.length === 0) return null;
+
+        return (
+          <div className="d-flex flex-wrap gap-2 mb-3">
+            {unusualStocks.slice(0, 4).map(us => {
+              const um = us.unusualMove;
+              const isSurge = um.type === 'SURGE';
+              const accentColor = um.opportunityScore >= 70 ? (isSurge ? '#22C55E' : '#EF4444') : '#F59E0B';
+              const bgColor = um.opportunityScore >= 70 ? (isSurge ? 'rgba(34,197,94,0.18)' : 'rgba(239,68,68,0.18)') : 'rgba(245,158,11,0.18)';
+              const sign = um.changePct >= 0 ? '+' : '';
+
+              return (
+                <div
+                  key={us.symbol}
+                  className="d-flex align-items-center gap-2 px-3 py-2 rounded-pill"
+                  style={{
+                    backgroundColor: bgColor,
+                    border: `1.5px solid ${accentColor}66`,
+                    cursor: 'pointer',
+                    whiteSpace: 'nowrap'
+                  }}
+                  onClick={() => handleRowClick(us.symbol)}
+                  title={`${um.reason}\nATR: ${um.atrRatio}× | Vol: ${um.volumeRatio}× | Intraday: ${um.intradayPct >= 0 ? '+' : ''}${um.intradayPct}%`}
+                >
+                  <span style={{ fontSize: '1.1rem' }}>{um.emoji}</span>
+                  <span className="fw-bold text-white" style={{ fontSize: '0.82rem' }}>{us.symbol}</span>
+                  <span className="fw-bold" style={{ color: accentColor, fontSize: '0.82rem' }}>
+                    {sign}{um.changePct}% ({sign}₹{um.moveRupees?.toLocaleString?.('en-IN', { minimumFractionDigits: 2 }) || um.moveRupees})
+                  </span>
+                  <span className="fw-semibold" style={{ color: '#F59E0B', fontSize: '0.75rem' }}>
+                    {um.opportunityScore}/100
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        );
+      })()}
+
       {/* Table */}
       <div className="table-responsive" style={{ maxHeight: '550px' }}>
         <table className="table tp-table table-hover">
@@ -289,6 +358,7 @@ export const MarketScanner = () => {
               <th>MACD</th>
               <th>ADX</th>
               <th>Sector</th>
+              <th>Unusual Move</th>
               <th className="text-center">Score</th>
               <th className="text-center">{isSell ? 'Short Signal' : 'Signal'}</th>
             </tr>
@@ -296,7 +366,7 @@ export const MarketScanner = () => {
           <tbody>
             {sortedStocks.length === 0 ? (
               <tr>
-                <td colSpan="14" className="text-center text-muted py-5">
+                <td colSpan="15" className="text-center text-muted py-5">
                   {selectedIndex && selectedIndexStocks.length === 0
                     ? `INDIA VIX is a volatility index — it has no constituent stocks.`
                     : selectedIndex && selectedIndexStocks.length > 0
@@ -346,7 +416,24 @@ export const MarketScanner = () => {
                       )}
                     </td>
                     <td className="fw-bold" style={{ color: 'var(--tp-text)' }} onClick={() => handleRowClick(stock.symbol)}>
-                      <div>{stock.symbol}</div>
+                      <div className="d-flex align-items-center gap-1">
+                        <span>{stock.symbol}</span>
+                        {stock.unusualMove && stock.unusualMove.stars >= 2 && (
+                          <span
+                            className="badge rounded-pill"
+                            style={{
+                              backgroundColor: stock.unusualMove.type === 'SURGE' ? 'rgba(34,197,94,0.15)' : 'rgba(239,68,68,0.15)',
+                              color: stock.unusualMove.type === 'SURGE' ? '#22C55E' : '#EF4444',
+                              border: `1px solid ${stock.unusualMove.type === 'SURGE' ? '#22C55E' : '#EF4444'}44`,
+                              fontSize: '0.6rem',
+                              cursor: 'help'
+                            }}
+                            title={`${stock.unusualMove.emoji} ${stock.unusualMove.changePct >= 0 ? '+' : ''}${stock.unusualMove.changePct}% in ${stock.unusualMove.minutes}min — ${'⭐'.repeat(stock.unusualMove.stars)}`}
+                          >
+                            {'⭐'.repeat(stock.unusualMove.stars)}
+                          </span>
+                        )}
+                      </div>
                       <small className="text-muted fw-normal" style={{ fontSize: '0.7rem' }}>{stock.name}</small>
                     </td>
                     <td className="fw-bold" style={{ color: 'var(--tp-text)' }}>
@@ -354,6 +441,9 @@ export const MarketScanner = () => {
                     </td>
                     <td className={`fw-semibold ${changeColor}`}>
                       {isUp ? '▲' : '▼'} {changePct}%
+                      <div className="fw-normal" style={{ fontSize: '0.7rem' }}>
+                        {isUp ? '+' : '-'}₹{Math.abs(changeVal).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </div>
                     </td>
                     <td className="text-muted" style={{ fontSize: '0.85rem' }}>
                       {(stock.volume / 100000).toFixed(1)}L
@@ -380,6 +470,44 @@ export const MarketScanner = () => {
                       <span className="badge bg-secondary-subtle text-secondary border border-secondary-subtle" style={{ fontSize: '0.7rem' }}>
                         {stock.sector}
                       </span>
+                    </td>
+                    <td style={{ fontSize: '0.8rem' }}>
+                      {stock.unusualMove && stock.unusualMove.stars >= 1 ? (() => {
+                        const um = stock.unusualMove;
+                        const isSurge = um.type === 'SURGE';
+                        const sign = um.changePct >= 0 ? '+' : '';
+                        const labelColor = um.opportunityScore >= 80 ? (isSurge ? '#22C55E' : '#EF4444')
+                                        : um.opportunityScore >= 60 ? '#F59E0B'
+                                        : um.opportunityScore >= 40 ? '#8B5CF6'
+                                        : '#6B7280';
+                        return (
+                          <div className="d-flex flex-column" style={{ gap: '2px' }}>
+                            {/* Alert label + ₹ amount + % change */}
+                            <span
+                              className="fw-bold"
+                              style={{ color: labelColor, fontSize: '0.82rem', whiteSpace: 'nowrap' }}
+                              title={`${um.emoji} ${um.reason}\nOpportunity Score: ${um.opportunityScore}/100\n${'⭐'.repeat(um.stars)}`}
+                            >
+                              {um.emoji} {sign}₹{um.moveRupees?.toLocaleString?.('en-IN', { minimumFractionDigits: 2 }) || um.moveRupees}
+                              <span style={{ fontSize: '0.7rem', fontWeight: 500 }}> ({sign}{um.changePct}%)</span>
+                            </span>
+                            {/* Sub-metrics row */}
+                            <div className="d-flex align-items-center gap-2" style={{ fontSize: '0.65rem' }}>
+                              {um.atrRatio >= 1.2 && (
+                                <span className="text-muted" title="Move vs normal daily range">ATR {um.atrRatio}×</span>
+                              )}
+                              {um.volumeRatio >= 1.3 && (
+                                <span className="text-muted" title="Volume vs average">Vol {um.volumeRatio}×</span>
+                              )}
+                              <span className="fw-semibold" style={{ color: labelColor, fontSize: '0.6rem' }}>
+                                {um.opportunityScore}/100
+                              </span>
+                            </div>
+                          </div>
+                        );
+                      })() : (
+                        <span className="text-muted" style={{ fontSize: '0.7rem' }}>—</span>
+                      )}
                     </td>
                     <td>
                       <div className="d-flex flex-column align-items-center" style={{ width: '70px' }}>

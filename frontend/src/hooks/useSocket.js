@@ -17,7 +17,8 @@ export const useSocket = () => {
     setConnectionError,
     setLastTickTime,
     addAlert,
-    favorites
+    favorites,
+    setCircuitHits
   } = useApp();
 
   const socketRef = useRef(null);
@@ -37,6 +38,7 @@ export const useSocket = () => {
   const setIsSimulationRef = useRef(setIsSimulation);
   const setConnectionErrorRef = useRef(setConnectionError);
   const setLastTickTimeRef = useRef(setLastTickTime);
+  const setCircuitHitsRef = useRef(setCircuitHits);
 
   // Keep refs in sync with latest callbacks on every render
   useEffect(() => { addAlertRef.current = addAlert; });
@@ -50,6 +52,7 @@ export const useSocket = () => {
   useEffect(() => { setIsSimulationRef.current = setIsSimulation; });
   useEffect(() => { setConnectionErrorRef.current = setConnectionError; });
   useEffect(() => { setLastTickTimeRef.current = setLastTickTime; });
+  useEffect(() => { setCircuitHitsRef.current = setCircuitHits; });
 
   // Connect socket ONCE and never disconnect on re-renders
   useEffect(() => {
@@ -136,6 +139,19 @@ export const useSocket = () => {
 
       // 6. Process sector scores
       if (data.sectorScores) setSectorScoresRef.current(data.sectorScores);
+
+      // 7. Process circuit hits
+      if (data.circuitHits) setCircuitHitsRef.current(data.circuitHits);
+    });
+
+    // Handle real-time circuit hit alerts
+    socket.on('circuit_hit', (hit) => {
+      addAlertRef.current({
+        title: `🔒 ${hit.type} CIRCUIT: ${hit.symbol}`,
+        message: `${hit.name || hit.symbol} @ ₹${hit.price} (${hit.changePct >= 0 ? '+' : ''}${hit.changePct}%)`,
+        type: hit.type === 'UPPER' ? 'BUY' : 'EXIT'
+      });
+      setCircuitHitsRef.current(prev => [hit, ...prev].slice(0, 50));
     });
 
     // Handle real-time signals/alerts

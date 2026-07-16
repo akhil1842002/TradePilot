@@ -37,7 +37,8 @@ export const ScannerSettingsModal = ({ onClose }) => {
     { key: 'resistance', title: 'Resistance Pivot Testing', desc: 'Alerts if near local resistance targets' },
     { key: 'relativeStrength', title: 'Relative Strength Index', desc: 'Analyzes strength relative to Nifty index' },
     { key: 'sectorStrength', title: 'Sector Strength Integration', desc: 'Correlates stock movement with parent sector strength' },
-    { key: 'marketBreadth', title: 'Market Breadth Integration', desc: 'Factors in Nifty Advances/Declines trend' }
+    { key: 'marketBreadth', title: 'Market Breadth Integration', desc: 'Factors in Nifty Advances/Declines trend' },
+    { key: 'unusualMove', title: 'Unusual Price Movement Detection ⭐', desc: 'Detects rapid price surges/drops exceeding normal daily range with volume confirmation' }
   ];
 
   return (

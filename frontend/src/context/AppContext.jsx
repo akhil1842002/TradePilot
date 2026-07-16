@@ -31,6 +31,9 @@ export const AppProvider = ({ children }) => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const toggleSidebar = () => setSidebarOpen(prev => !prev);
 
+  // Circuit Hits
+  const [circuitHits, setCircuitHits] = useState([]);
+
   // Live data tracking
   const [lastTickTime, setLastTickTime] = useState(null);
 
@@ -432,7 +435,9 @@ export const AppProvider = ({ children }) => {
       toggleFavorite,
       isFavorite,
       lastTickTime,
-      setLastTickTime
+      setLastTickTime,
+      circuitHits,
+      setCircuitHits
     }}>
       {children}
     </AppContext.Provider>

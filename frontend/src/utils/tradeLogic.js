@@ -89,6 +89,18 @@ export function getShortRecommendation(stock) {
     reasons.push('Near resistance level — supply zone');
   }
 
+  // ── 8. Unusual Price Movement ────────────────────────────────────
+  if (stock.unusualMove && stock.unusualMove.opportunityScore >= 40) {
+    const um = stock.unusualMove;
+    if (um.type === 'DROP') {
+      score += 15;
+      reasons.push(`🚨 Unusual Drop: ${um.changePct}% (ATR ${um.atrRatio}×, Vol ${um.volumeRatio}×)`);
+    } else if (um.type === 'SURGE') {
+      score -= 10;
+      reasons.push(`⚠️ Unusual Surge against short: +${um.changePct}% (ATR ${um.atrRatio}×)`);
+    }
+  }
+
   // Clamp score 0–100
   score = Math.max(0, Math.min(100, score));
 

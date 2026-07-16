@@ -272,13 +272,13 @@ export const TradeJournal = () => {
                         <span className="text-white" style={{ fontSize: '0.85rem' }}>{entry.reason || 'General'}</span>
                       </td>
                       <td>
-                        <span className="badge bg-secondary-subtle text-light border border-secondary" style={{ fontSize: '0.7rem' }}>
-                          <FaHeart className="text-danger me-1" />
+                        <span className="badge badge-emotion" style={{ fontSize: '0.7rem' }}>
+                          <FaHeart className="me-1" />
                           {entry.emotion || 'Neutral'}
                         </span>
                       </td>
                       <td>
-                        <span className="badge bg-dark-subtle text-warning border border-warning" style={{ fontSize: '0.7rem' }}>
+                        <span className="badge badge-mistake" style={{ fontSize: '0.7rem' }}>
                           <FaExclamationTriangle className="me-1" />
                           {entry.mistake || 'None'}
                         </span>

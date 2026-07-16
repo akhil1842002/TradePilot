@@ -5,7 +5,7 @@ import { FaArrowUp, FaArrowDown, FaMinus } from 'react-icons/fa';
 const TREND_CONFIG = {
   'Bullish':              { color: '#22C55E', bg: 'rgba(34,197,94,0.1)',  emoji: '🟢' },
   'Moderately Bullish':   { color: '#4ADE80', bg: 'rgba(74,222,128,0.08)', emoji: '🟩' },
-  'Neutral':              { color: '#F59E0B', bg: 'rgba(245,158,11,0.08)', emoji: '🟡' },
+  'Neutral':              { color: '#3B82F6', bg: 'rgba(59,130,246,0.08)', emoji: '🔵' },
   'Moderately Bearish':   { color: '#F87171', bg: 'rgba(248,113,113,0.08)', emoji: '🟠' },
   'Bearish':              { color: '#EF4444', bg: 'rgba(239,68,68,0.1)',  emoji: '🔴' }
 };
@@ -59,10 +59,10 @@ export const MarketBreadth = () => {
           <tbody>
             {enrichedBreadth.map((b) => {
               const trend = TREND_CONFIG[b.trend?.replace(/[🟢🔴🟡]/g, '').trim()] || TREND_CONFIG['Neutral'];
-              const emaColor = b.aboveEMA50Pct >= 80 ? 'text-success fw-bold' : b.aboveEMA50Pct >= 60 ? 'text-success' : b.aboveEMA50Pct >= 40 ? 'text-warning' : b.aboveEMA50Pct >= 20 ? 'text-danger' : 'text-danger fw-bold';
+              const emaColor = b.aboveEMA50Pct >= 80 ? 'text-success fw-bold' : b.aboveEMA50Pct >= 60 ? 'text-success' : b.aboveEMA50Pct >= 40 ? 'text-info' : b.aboveEMA50Pct >= 20 ? 'text-danger' : 'text-danger fw-bold';
               const rsiColor = b.avgRSI >= 60 ? 'text-success' : b.avgRSI <= 40 ? 'text-danger' : '';
               const chgColor = b.avgChange >= 0 ? 'text-success' : 'text-danger';
-              const advanceBarColor = b.advancePct >= 60 ? '#22C55E' : b.advancePct >= 40 ? '#F59E0B' : '#EF4444';
+              const advanceBarColor = b.advancePct >= 60 ? '#22C55E' : b.advancePct >= 40 ? '#3B82F6' : '#EF4444';
 
               return (
                 <tr
@@ -90,7 +90,7 @@ export const MarketBreadth = () => {
                       <div className="progress w-100 bg-dark mt-1" style={{ height: '3px' }}>
                         <div
                           className="progress-bar"
-                          style={{ width: `${b.aboveEMA50Pct}%`, backgroundColor: emaColor === 'text-success' ? '#22C55E' : emaColor === 'text-warning' ? '#F59E0B' : '#EF4444' }}
+                          style={{ width: `${b.aboveEMA50Pct}%`, backgroundColor: emaColor === 'text-success' ? '#22C55E' : emaColor === 'text-info' ? '#3B82F6' : '#EF4444' }}
                         />
                       </div>
                     </div>

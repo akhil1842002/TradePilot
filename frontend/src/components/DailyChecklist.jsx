@@ -23,8 +23,8 @@ export const DailyChecklist = () => {
   } = checklist;
 
   // Determine colors and icons based on status
-  let trendIcon = <FaBalanceScale className="text-warning fs-4" />;
-  let trendColor = 'text-warning';
+  let trendIcon = <FaBalanceScale className="text-info fs-4" />;
+  let trendColor = 'text-info';
   if (marketTrend === 'Bullish') {
     trendIcon = <FaArrowUp className="text-success fs-4" />;
     trendColor = 'text-success';
@@ -35,10 +35,10 @@ export const DailyChecklist = () => {
 
   let riskColor = 'text-success';
   if (riskLevel === 'High') riskColor = 'text-danger';
-  else if (riskLevel === 'Medium') riskColor = 'text-warning';
+  else if (riskLevel === 'Medium') riskColor = 'text-info';
 
-  let recIcon = <FaExclamationTriangle className="text-warning me-2" />;
-  let recBadge = 'bg-warning-subtle text-warning border-warning';
+  let recIcon = <FaExclamationTriangle className="text-info me-2" />;
+  let recBadge = 'bg-info-subtle text-info border-info';
   if (recommendation === 'Good Day To Trade') {
     recIcon = <FaCheckCircle className="text-success me-2" />;
     recBadge = 'bg-success-subtle text-success border-success';
@@ -72,9 +72,9 @@ export const DailyChecklist = () => {
                   d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
                 />
                 <path
-                  className={score >= 70 ? 'text-success' : (score >= 40 ? 'text-warning' : 'text-danger')}
+                  className={score >= 70 ? 'text-success' : (score >= 40 ? 'text-info' : 'text-danger')}
                   style={{ 
-                    stroke: score >= 70 ? 'var(--tp-success)' : (score >= 40 ? 'var(--tp-warning)' : 'var(--tp-danger)'), 
+                    stroke: score >= 70 ? 'var(--tp-success)' : (score >= 40 ? 'var(--tp-info)' : 'var(--tp-danger)'), 
                     fill: 'none', 
                     strokeWidth: 3, 
                     strokeDasharray: `${score}, 100`,
@@ -132,7 +132,7 @@ export const DailyChecklist = () => {
 
       <div className="mt-3 pt-3 border-top border-secondary d-flex align-items-center justify-content-between" style={{ fontSize: '0.8rem' }}>
         <span className="text-muted">Current Risk Rating: <strong className={riskColor}>{riskLevel}</strong></span>
-        <span className="text-warning fw-semibold">⚡ Review checklist before manual ordering</span>
+        <span className="text-info fw-semibold">⚡ Review checklist before manual ordering</span>
       </div>
     </div>
   );

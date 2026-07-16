@@ -887,23 +887,20 @@ class KiteService {
         holdings.forEach(h => { if (h.tradingsymbol) trackedSymbols.add(h.tradingsymbol); });
       }
 
-      // ── Load tracked symbols from instrument database ─────────────
-      // Try MongoDB first (instrumentService), fall back to stock_master.json
-      let dbSymbols = [];
+      // ── Load tracked symbols from instrument database + stock master ──
+      // Always include stock_master.json symbols (125 core stocks) as baseline
+      const stockMasterSymbols = stockMaster.getAllSymbols();
+      stockMasterSymbols.forEach(s => trackedSymbols.add(s.toUpperCase()));
+
+      // Augment with MongoDB instrument DB if connected
       try {
         const instrumentService = require('./instrumentService');
-        // Get NIFTY 500 + any stocks in the DB that have enrichment data
         const instruments = await instrumentService.query({ limit: 2000 });
-        dbSymbols = instruments.map(i => i.tradingsymbol);
-        console.log(`📊 Loaded ${dbSymbols.length} symbols from instrument database`);
+        instruments.forEach(i => { if (i.tradingsymbol) trackedSymbols.add(i.tradingsymbol.toUpperCase()); });
+        console.log(`📊 Augmented with ${instruments.length} symbols from instrument database`);
       } catch (e) {
-        // MongoDB not connected or no instruments — use stock master
-        dbSymbols = stockMaster.getAllSymbols();
-        console.log(`📊 Loaded ${dbSymbols.length} symbols from stock_master.json (DB fallback)`);
+        console.log(`📊 Instrument DB not available, using stock_master.json only`);
       }
-
-      // Add DB symbols to tracked set
-      dbSymbols.forEach(s => trackedSymbols.add(s.toUpperCase()));
 
       console.log(`📋 Tracking ${trackedSymbols.size} unique symbols`);
 

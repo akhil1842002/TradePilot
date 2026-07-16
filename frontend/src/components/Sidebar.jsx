@@ -2,7 +2,7 @@ import React from 'react';
 import { useApp } from '../context/AppContext';
 import {
   FaThLarge, FaGlobe, FaSearchDollar, FaListUl, FaChartLine,
-  FaBriefcase, FaBookOpen, FaChartBar, FaFolder, FaCog, FaTimes, FaBan
+  FaBriefcase, FaBookOpen, FaChartBar, FaFolder, FaCog, FaTimes, FaBan, FaFire
 } from 'react-icons/fa';
 
 export const Sidebar = () => {
@@ -19,6 +19,7 @@ export const Sidebar = () => {
     { id: 'journal',   label: 'Trade Journal', icon: <FaBookOpen /> },
     { id: 'analytics', label: 'Analytics',     icon: <FaChartBar /> },
     { id: 'circuit-hits', label: 'Circuit Hits', icon: <FaBan /> },
+    { id: 'volume-scanner', label: 'Volume Scanner', icon: <FaFire /> },
     { id: 'portfolio', label: 'Portfolio',     icon: <FaFolder /> },
     { id: 'settings',  label: 'Settings',      icon: <FaCog /> },
   ];

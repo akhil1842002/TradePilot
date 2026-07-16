@@ -13,6 +13,7 @@ import OpenTrades from './components/OpenTrades';
 import TradeJournal from './components/TradeJournal';
 import WatchlistManager from './components/WatchlistManager';
 import AnalyticsDashboard from './components/AnalyticsDashboard';
+import VolumeScanner from './components/VolumeScanner';
 
 import { useApp } from './context/AppContext';
 import { useSocket } from './hooks/useSocket';
@@ -50,6 +51,7 @@ export const App = () => {
       case 'journal': return <TradeJournal />;
       case 'analytics': return <AnalyticsDashboard />;
       case 'circuit-hits': return <CircuitHitsPage />;
+      case 'volume-scanner': return <VolumeScanner />;
       case 'portfolio':
         return (
           <div className="d-flex flex-column gap-4">

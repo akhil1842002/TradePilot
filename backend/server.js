@@ -7,6 +7,7 @@ const connectDB = require('./config/db');
 const storageService = require('./services/storageService');
 const kiteService = require('./services/kiteService');
 const instrumentService = require('./services/instrumentService');
+const volumeScannerService = require('./services/volumeScannerService');
 
 // Express App setup
 const app = express();
@@ -35,6 +36,7 @@ app.use('/api/scanner', require('./routes/scanner'));
 app.use('/api/analytics', require('./routes/analytics'));
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/favorites', require('./routes/favorites'));
+app.use('/api/volume-scanner', require('./routes/volumeScanner'));
 
 // Instrument DB routes (refresh, status)
 app.get('/api/instruments/refresh', async (req, res) => {
@@ -90,6 +92,19 @@ io.on('connection', (socket) => {
   socket.emit('auth_status', {
     isSimulation: kiteService.isSimulation,
     isConnected: kiteService.isLiveReady && !!process.env.KITE_ACCESS_TOKEN
+  });
+
+  // Push volume scanner data immediately on connect
+  socket.emit('volume_scanner_update', {
+    ranked: volumeScannerService.getRanked().slice(0, 50),
+    leaders: volumeScannerService.getTopLeaders(10),
+    summary: {
+      highRvol: volumeScannerService.getRanked({ minRvol: 2.0 }).length,
+      spike1mCount: volumeScannerService.getRanked({ minSpike1m: 2.0 }).length,
+      spike5mCount: volumeScannerService.getRanked({ minSpike5m: 2.0 }).length,
+      consecutiveVolCount: volumeScannerService.getRanked({ consecutiveVol: true }).length,
+      priceUpVolUpCount: volumeScannerService.getRanked({ priceUpVolUp: true }).length,
+    }
   });
 
   socket.on('disconnect', () => {

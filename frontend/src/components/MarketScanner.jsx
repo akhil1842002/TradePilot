@@ -25,6 +25,7 @@ export const MarketScanner = () => {
   const [showSettings, setShowSettings] = useState(false);
   const [filterRec, setFilterRec] = useState('ALL');
   const [filterUnusual, setFilterUnusual] = useState('ALL');
+  const [priceRange, setPriceRange] = useState('ALL');
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(50);
 
@@ -64,7 +65,16 @@ export const MarketScanner = () => {
                         : filterUnusual === 'MINOR'       ? (um && um.opportunityScore >= 25 && um.opportunityScore < 40)
                         : filterUnusual === 'NONE'        ? (!um || um.opportunityScore < 25)
                         : true;
-      return matchSearch && matchSector && matchIndex && matchRec && matchUnusual;
+      // Price range filter (dropdown presets)
+      const matchPrice = priceRange === 'ALL' ? true
+                        : priceRange === 'BELOW_100'   ? s.price < 100
+                        : priceRange === '100_500'     ? s.price >= 100 && s.price <= 500
+                        : priceRange === '500_1000'    ? s.price >= 500 && s.price <= 1000
+                        : priceRange === '1000_5000'   ? s.price >= 1000 && s.price <= 5000
+                        : priceRange === '5000_10000'  ? s.price >= 5000 && s.price <= 10000
+                        : priceRange === 'ABOVE_10000' ? s.price > 10000
+                        : true;
+      return matchSearch && matchSector && matchIndex && matchRec && matchUnusual && matchPrice;
     });
 
     return filtered.sort((a, b) => {
@@ -72,7 +82,7 @@ export const MarketScanner = () => {
       const confB = b.effectiveRec?.confidence ?? 0;
       return confB - confA;
     });
-  }, [enriched, searchQuery, activeSectorFilter, selectedIndexStocks, activeFilter, filterUnusual]);
+  }, [enriched, searchQuery, activeSectorFilter, selectedIndexStocks, activeFilter, filterUnusual, priceRange]);
 
   // Pagination
   const totalPages = Math.max(1, Math.ceil(sortedStocks.length / pageSize));
@@ -80,7 +90,7 @@ export const MarketScanner = () => {
   const paginatedStocks = sortedStocks.slice((safePage - 1) * pageSize, safePage * pageSize);
 
   // Reset to page 1 when filters change
-  useEffect(() => { setPage(1); }, [searchQuery, activeSectorFilter, selectedIndexStocks, activeFilter, filterUnusual]);
+  useEffect(() => { setPage(1); }, [searchQuery, activeSectorFilter, selectedIndexStocks, activeFilter, filterUnusual, priceRange]);
 
   // Top signal for the notice hero banner
   const topSignal = sortedStocks.length > 0 ? sortedStocks[0] : null;
@@ -231,6 +241,22 @@ export const MarketScanner = () => {
             <option value="NOTICEABLE">⚡ Noticeable (40+)</option>
             <option value="MINOR">📊 Minor (25+)</option>
             <option value="NONE">◻ No Unusual</option>
+          </select>
+
+          {/* Price Range Filter */}
+          <select
+            className="form-select form-select-sm border-secondary"
+            style={{ width: '150px', fontSize: '0.85rem', backgroundColor: 'var(--tp-bg)', color: 'var(--tp-text)' }}
+            value={priceRange}
+            onChange={e => setPriceRange(e.target.value)}
+          >
+            <option value="ALL">💰 All Prices</option>
+            <option value="BELOW_100">Below ₹100</option>
+            <option value="100_500">₹100 – ₹500</option>
+            <option value="500_1000">₹500 – ₹1,000</option>
+            <option value="1000_5000">₹1,000 – ₹5,000</option>
+            <option value="5000_10000">₹5,000 – ₹10,000</option>
+            <option value="ABOVE_10000">Above ₹10,000</option>
           </select>
 
           <button

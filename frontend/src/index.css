@@ -5,6 +5,9 @@
   --tp-sidebar: #1F2937;
   --tp-card: #1E293B;
   --tp-text: #F8FAFC;
+  --tp-text-muted: #9CA3AF;
+  --tp-primary: #3B82F6;
+  --tp-primary-hover: #2563EB;
   --tp-success: #22C55E;
   --tp-danger: #EF4444;
   --tp-warning: #F59E0B;
@@ -19,6 +22,9 @@
   --tp-sidebar: #ffffff;
   --tp-card: #ffffff;
   --tp-text: #111827;
+  --tp-text-muted: #6b7280;
+  --tp-primary: #2563EB;
+  --tp-primary-hover: #1D4ED8;
   --tp-hover: #f3f4f6;
   --tp-border: #e5e7eb;
 }

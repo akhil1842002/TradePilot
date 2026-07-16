@@ -1,6 +1,7 @@
 const { KiteConnect, KiteTicker } = require('kiteconnect');
 const decisionEngine = require('./decisionEngine');
 const stockMaster = require('./stockMaster');
+const volumeScannerService = require('./volumeScannerService');
 
 // Sector mapping is now derived from stock_master.json at runtime
 const SYMBOL_SECTORS = stockMaster.getSectorMap();
@@ -902,7 +903,12 @@ class KiteService {
               breadth: this.breadth,
               sectorScores: this.sectorScores,
               circuitHits: this.circuitHits,
-              isSimulation: false
+              isSimulation: false,
+              volumeScanner: {
+                ranked: [],
+                leaders: [],
+                summary: { highRvol: 0, spike1mCount: 0, spike5mCount: 0, consecutiveVolCount: 0, priceUpVolUpCount: 0 }
+              }
             });
           }
 
@@ -1470,6 +1476,9 @@ class KiteService {
       });
     })();
 
+    // ── Update Volume Scanner metrics ────────────────────────
+    volumeScannerService.updateAll(this.stocks);
+
     // Emit live data to all connected frontend clients
     if (this.io) {
       this.io.emit('ticks', {
@@ -1524,7 +1533,18 @@ class KiteService {
         breadth: this.breadth,
         sectorScores: this.sectorScores,
         circuitHits: this.circuitHits,
-        isSimulation: this.isSimulation
+        isSimulation: this.isSimulation,
+        volumeScanner: {
+          ranked: volumeScannerService.getRanked().slice(0, 50),
+          leaders: volumeScannerService.getTopLeaders(10),
+          summary: {
+            highRvol: volumeScannerService.getRanked({ minRvol: 2.0 }).length,
+            spike1mCount: volumeScannerService.getRanked({ minSpike1m: 2.0 }).length,
+            spike5mCount: volumeScannerService.getRanked({ minSpike5m: 2.0 }).length,
+            consecutiveVolCount: volumeScannerService.getRanked({ consecutiveVol: true }).length,
+            priceUpVolUpCount: volumeScannerService.getRanked({ priceUpVolUp: true }).length,
+          }
+        }
       });
     }
   }
@@ -1696,6 +1716,9 @@ class KiteService {
           }
         });
 
+        // ── Update Volume Scanner metrics ────────────────────────
+        volumeScannerService.updateAll(this.stocks);
+
         // Emit to frontend
         if (this.io) {
           this.io.emit('ticks', {
@@ -1737,7 +1760,18 @@ class KiteService {
             breadth: this.breadth,
             sectorScores: this.sectorScores,
             circuitHits: this.circuitHits,
-            isSimulation: false
+            isSimulation: false,
+            volumeScanner: {
+              ranked: volumeScannerService.getRanked().slice(0, 50),
+              leaders: volumeScannerService.getTopLeaders(10),
+              summary: {
+                highRvol: volumeScannerService.getRanked({ minRvol: 2.0 }).length,
+                spike1mCount: volumeScannerService.getRanked({ minSpike1m: 2.0 }).length,
+                spike5mCount: volumeScannerService.getRanked({ minSpike5m: 2.0 }).length,
+                consecutiveVolCount: volumeScannerService.getRanked({ consecutiveVol: true }).length,
+                priceUpVolUpCount: volumeScannerService.getRanked({ priceUpVolUp: true }).length,
+              }
+            }
           });
         }
 

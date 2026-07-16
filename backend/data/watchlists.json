@@ -1,0 +1,57 @@
+[
+  {
+    "_id": "6a590c4e656e37c1dfd4cf32",
+    "name": "Intraday",
+    "stocks": [
+      "BEL",
+      "RELIANCE",
+      "TCS",
+      "INFY"
+    ]
+  },
+  {
+    "_id": "6a590c4e656e37c1dfd4cf33",
+    "name": "Swing",
+    "stocks": [
+      "HDFCBANK",
+      "ICICIBANK",
+      "SBIN"
+    ]
+  },
+  {
+    "_id": "6a590c4e656e37c1dfd4cf34",
+    "name": "Defence",
+    "stocks": [
+      "BEL",
+      "HAL",
+      "BDL"
+    ]
+  },
+  {
+    "_id": "6a590c4e656e37c1dfd4cf35",
+    "name": "Bank",
+    "stocks": [
+      "HDFCBANK",
+      "ICICIBANK",
+      "SBIN",
+      "AXISBANK",
+      "KOTAKBANK"
+    ]
+  },
+  {
+    "_id": "6a590c4e656e37c1dfd4cf36",
+    "name": "IT",
+    "stocks": [
+      "TCS",
+      "INFY",
+      "WIPRO",
+      "HCLTECH",
+      "TECHM"
+    ]
+  },
+  {
+    "_id": "6a590c4e656e37c1dfd4cf37",
+    "name": "Custom",
+    "stocks": []
+  }
+]

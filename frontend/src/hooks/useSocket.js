@@ -19,7 +19,8 @@ export const useSocket = () => {
     addAlert,
     favorites,
     setCircuitHits,
-    setOpenTrades
+    setOpenTrades,
+    setVolumeScanner
   } = useApp();
 
   const socketRef = useRef(null);
@@ -41,6 +42,7 @@ export const useSocket = () => {
   const setLastTickTimeRef = useRef(setLastTickTime);
   const setCircuitHitsRef = useRef(setCircuitHits);
   const setOpenTradesRef = useRef(setOpenTrades);
+  const setVolumeScannerRef = useRef(setVolumeScanner);
 
   // Keep refs in sync with latest callbacks on every render
   useEffect(() => { addAlertRef.current = addAlert; });
@@ -56,6 +58,7 @@ export const useSocket = () => {
   useEffect(() => { setLastTickTimeRef.current = setLastTickTime; });
   useEffect(() => { setCircuitHitsRef.current = setCircuitHits; });
   useEffect(() => { setOpenTradesRef.current = setOpenTrades; });
+  useEffect(() => { setVolumeScannerRef.current = setVolumeScanner; });
 
   // Connect socket ONCE and never disconnect on re-renders
   useEffect(() => {
@@ -145,6 +148,9 @@ export const useSocket = () => {
 
       // 7. Process circuit hits
       if (data.circuitHits) setCircuitHitsRef.current(data.circuitHits);
+
+      // 8. Process volume scanner data
+      if (data.volumeScanner) setVolumeScannerRef.current(data.volumeScanner);
     });
 
     // Handle real-time circuit hit alerts
@@ -155,6 +161,11 @@ export const useSocket = () => {
         type: hit.type === 'UPPER' ? 'BUY' : 'EXIT'
       });
       setCircuitHitsRef.current(prev => [hit, ...prev].slice(0, 50));
+    });
+
+    // Handle volume scanner data pushed independently (sample data / on-connect)
+    socket.on('volume_scanner_update', (data) => {
+      setVolumeScannerRef.current(data);
     });
 
     // Handle real-time signals/alerts

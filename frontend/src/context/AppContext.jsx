@@ -6,7 +6,9 @@ const AppContext = createContext();
 const API_BASE = 'http://localhost:5000/api';
 
 export const AppProvider = ({ children }) => {
-  const [activeView, setActiveView] = useState('dashboard');
+  const [activeView, setActiveView] = useState(() => {
+    return localStorage.getItem('tp-activeView') || 'dashboard';
+  });
   const [selectedStock, setSelectedStock] = useState('BEL');
   const [stocks, setStocks] = useState([]);
   const [indices, setIndices] = useState({});
@@ -34,6 +36,13 @@ export const AppProvider = ({ children }) => {
   // Circuit Hits
   const [circuitHits, setCircuitHits] = useState([]);
 
+  // Volume Scanner
+  const [volumeScanner, setVolumeScanner] = useState({
+    ranked: [],
+    leaders: [],
+    summary: { highRvol: 0, spike1mCount: 0, spike5mCount: 0, consecutiveVolCount: 0, priceUpVolUpCount: 0 }
+  });
+
   // Live data tracking
   const [lastTickTime, setLastTickTime] = useState(null);
 
@@ -57,6 +66,11 @@ export const AppProvider = ({ children }) => {
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
   }, [theme]);
+
+  // Persist active view across reloads
+  useEffect(() => {
+    localStorage.setItem('tp-activeView', activeView);
+  }, [activeView]);
 
   // Favorites — persisted to backend + localStorage cache
   const [favorites, setFavorites] = useState(() => {
@@ -456,7 +470,9 @@ export const AppProvider = ({ children }) => {
       lastTickTime,
       setLastTickTime,
       circuitHits,
-      setCircuitHits
+      setCircuitHits,
+      volumeScanner,
+      setVolumeScanner
     }}>
       {children}
     </AppContext.Provider>

@@ -30,7 +30,8 @@ export const StockDetail = () => {
 
   const stock = stocks.find(s => s.symbol === selectedStock);
 
-  // Set default target & stoploss when stock or tradeMode changes
+  // Set default target & stoploss only when stock symbol or tradeMode changes.
+  // NOT on every price tick — lets you manually edit target/stoploss freely.
   useEffect(() => {
     if (stock) {
       const isShort = tradeMode === 'SELL';
@@ -40,7 +41,7 @@ export const StockDetail = () => {
       setStoploss(Number((stock.price * slMultiplier).toFixed(2)));
       setTradeStatus({ loading: false, msg: '', success: false });
     }
-  }, [selectedStock, stock?.price, tradeMode]);
+  }, [selectedStock, tradeMode]);
 
   // Fetch candle data and draw TradingView chart
   useEffect(() => {
@@ -376,6 +377,30 @@ export const StockDetail = () => {
                     );
                   })}
                 </div>
+                {/* Composite confidence score across all timeframes */}
+                {stock.multiTfConfidence != null && (
+                  <div className="mt-2">
+                    <div className="d-flex justify-content-between mb-1">
+                      <small className="text-muted" style={{ fontSize: '0.6rem' }}>COMPOSITE SCORE</small>
+                      <small className="fw-bold" style={{
+                        color: stock.multiTfConfidence >= 60 ? '#22C55E' : stock.multiTfConfidence >= 40 ? '#F59E0B' : '#EF4444',
+                        fontSize: '0.7rem'
+                      }}>
+                        {stock.multiTfConfidence}/100
+                      </small>
+                    </div>
+                    <div className="progress" style={{ height: '5px', backgroundColor: 'rgba(255,255,255,0.08)' }}>
+                      <div
+                        className="progress-bar"
+                        style={{
+                          width: `${stock.multiTfConfidence}%`,
+                          backgroundColor: stock.multiTfConfidence >= 60 ? '#22C55E' : stock.multiTfConfidence >= 40 ? '#F59E0B' : '#EF4444',
+                          transition: 'width 0.4s ease'
+                        }}
+                      />
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </div>

@@ -406,6 +406,7 @@ export const AppProvider = ({ children }) => {
       scannerConfig,
       updateScannerConfig,
       openTrades,
+      setOpenTrades,
       createTrade,
       closeTrade,
       syncKitePositions,

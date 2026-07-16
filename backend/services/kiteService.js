@@ -129,7 +129,7 @@ class KiteService {
       resistance: price * 1.03,
       depth: { buy: [], sell: [], totalBuyQuantity: 0, totalSellQuantity: 0 },
       recommendation: { action: 'HOLD', confidence: 50, reasons: ['Waiting for live data...'] },
-      // Multi-timeframe tracking
+      // Multi-timeframe tracking (seeded with synthetic history below)
       timeframes: {
         '1m':  { candles: [{ time: now, open: price, high: price, low: price, close: price }], ema50: price, signal: 'HOLD' },
         '5m':  { candles: [{ time: now, open: price, high: price, low: price, close: price }], ema50: price, signal: 'HOLD' },
@@ -139,6 +139,9 @@ class KiteService {
         '1w':  { candles: [{ time: now, open: price, high: price, low: price, close: price }], ema50: price, signal: 'HOLD' }
       }
     };
+
+    // Multi-timeframe candles are backfilled on the first
+    // updateMultiTimeframe() call — no separate seed needed.
   }
 
   recalculateIndicators(symbol) {
@@ -497,79 +500,154 @@ class KiteService {
     if (!stock) return;
 
     const tfs = stock.timeframes;
-    const now = new Date().toISOString();
+    if (!tfs) return;
+
+    const nowMs = Date.now();
     const p = stock.price;
 
-    // Timeframe config: [key, candleDurationMs, maxCandles]
+    // Timeframe config: [key, candleDurationMs, maxCandles, minCandlesForBackfill]
     const configs = [
-      ['1m',  60_000,   120],
-      ['5m',  300_000,  100],
-      ['15m', 900_000,  80],
-      ['1h',  3_600_000, 60],
-      ['1d',  86_400_000, 90],
-      ['1w',  604_800_000, 52]
+      ['1m',  60_000,   120,  10],
+      ['5m',  300_000,  100,  5],
+      ['15m', 900_000,  80,   5],
+      ['1h',  3_600_000, 60,  3],
+      ['1d',  86_400_000, 90,  3],
+      ['1w',  604_800_000, 52,  3]
     ];
 
-    for (const [tf, duration, max] of configs) {
+    for (const [tf, duration, max, minCandles] of configs) {
       const tfData = tfs[tf];
       if (!tfData) continue;
 
-      const candles = tfData.candles;
-      const lastCandle = candles[candles.length - 1];
-      const lastTime = new Date(lastCandle.time).getTime();
+      let candles = tfData.candles;
 
-      if (now - lastTime >= duration) {
-        // New candle
-        candles.push({ time: now, open: p, high: p, low: p, close: p });
+      // ── Backfill from main history if too few candles ───────────
+      if (candles.length < minCandles && stock.history && stock.history.length > 1) {
+        const aggregated = this._aggregateHistoryToCandles(stock.history, duration);
+        if (aggregated.length > candles.length) {
+          candles = aggregated;
+          if (candles.length > max) candles = candles.slice(-max);
+          tfData.candles = candles;
+        }
+      }
+
+      // ── Update / create current candle from latest price ────────
+      if (candles.length === 0) {
+        candles.push({ time: new Date(nowMs).toISOString(), open: p, high: p, low: p, close: p });
       } else {
-        // Update current candle
-        lastCandle.high = Math.max(lastCandle.high, p);
-        lastCandle.low = Math.min(lastCandle.low, p);
-        lastCandle.close = p;
+        const lastCandle = candles[candles.length - 1];
+        const lastTime = new Date(lastCandle.time).getTime();
+        if (nowMs - lastTime >= duration) {
+          candles.push({ time: new Date(nowMs).toISOString(), open: p, high: p, low: p, close: p });
+        } else {
+          lastCandle.high = Math.max(lastCandle.high, p);
+          lastCandle.low = Math.min(lastCandle.low, p);
+          lastCandle.close = p;
+        }
       }
 
       // Trim to max
       if (candles.length > max) tfData.candles = candles.slice(-max);
 
-      // Recalculate EMA50 for this timeframe
-      if (candles.length >= 5) {
-        const closes = candles.map(c => c.close);
+      // ── Recalculate EMA ─────────────────────────────────────────
+      const closes = candles.map(c => c.close);
+      if (closes.length >= 2) {
         tfData.ema50 = this.calculateEMA(closes, Math.min(50, closes.length));
       }
 
-      // Determine signal based on price vs EMA50
+      // ── Determine signal: price vs EMA50 ────────────────────────
       if (tfData.ema50 && tfData.ema50 > 0) {
         const pctAbove = ((p - tfData.ema50) / tfData.ema50) * 100;
-        if (pctAbove > 1) tfData.signal = 'BUY';
-        else if (pctAbove > 0.3) tfData.signal = 'HOLD';
-        else if (pctAbove > -0.3) tfData.signal = 'HOLD';
-        else if (pctAbove > -1) tfData.signal = 'EXIT';
-        else tfData.signal = 'EXIT';
+        if (pctAbove > 1) {
+          tfData.signal = 'BUY';
+        } else if (pctAbove < -1) {
+          tfData.signal = 'EXIT';
+        } else {
+          tfData.signal = 'HOLD';
+        }
       }
     }
   }
 
   /**
+   * Aggregate tick-level history (from stock.history) into OHLC candles
+   * for a given timeframe duration (in ms).
+   */
+  _aggregateHistoryToCandles(history, durationMs) {
+    if (!history || history.length === 0) return [];
+
+    const candles = [];
+    let bucketStart = null;
+    let o = 0, h = -Infinity, l = Infinity, c = 0;
+
+    for (const tick of history) {
+      const t = new Date(tick.time).getTime();
+      if (bucketStart === null) {
+        bucketStart = t;
+        o = tick.open;
+        h = tick.high;
+        l = tick.low;
+        c = tick.close;
+      }
+
+      if (t - bucketStart >= durationMs) {
+        candles.push({ time: new Date(bucketStart).toISOString(), open: o, high: h, low: l, close: c });
+        bucketStart = t;
+        o = tick.open;
+        h = tick.high;
+        l = tick.low;
+        c = tick.close;
+      } else {
+        h = Math.max(h, tick.high);
+        l = Math.min(l, tick.low);
+        c = tick.close;
+      }
+    }
+
+    // Push the last partial bucket
+    if (bucketStart !== null) {
+      candles.push({ time: new Date(bucketStart).toISOString(), open: o, high: h, low: l, close: c });
+    }
+
+    return candles;
+  }
+
+  /**
    * Multi-timeframe confirmation score (0-100)
-   * Higher = more timeframes agree on bullish
+   * Uses actual EMA50 deviation per timeframe for nuanced scoring.
+   * Higher = more timeframes confirm bullish alignment.
    */
   getMultiTimeframeConfidence(symbol) {
     const stock = this.stocks[symbol];
     if (!stock?.timeframes) return 50;
 
     const tfs = stock.timeframes;
-    const signals = Object.values(tfs).map(t => t.signal || 'HOLD');
-    const buyCount = signals.filter(s => s === 'BUY').length;
-    const holdCount = signals.filter(s => s === 'HOLD').length;
-    const exitCount = signals.filter(s => s === 'EXIT').length;
+    const tfKeys = Object.keys(tfs);
+    if (tfKeys.length === 0) return 50;
 
-    // Weight: BUY=+1, HOLD=0, EXIT=-1
-    const score = buyCount - exitCount;
-    const maxPossible = signals.length; // 6 timeframes
+    let totalScore = 0;
+    let totalWeight = 0;
 
-    // Normalize to 0-100
-    const normalized = Math.round(50 + (score / maxPossible) * 50);
-    return Math.max(5, Math.min(95, normalized));
+    // Weight each timeframe by responsiveness (shorter = higher weight)
+    const weights = { '1m': 3, '5m': 2.5, '15m': 2, '1h': 1.5, '1d': 1, '1w': 0.8 };
+
+    for (const tf of tfKeys) {
+      const tfData = tfs[tf];
+      const w = weights[tf] || 1;
+      totalWeight += w;
+
+      if (tfData.ema50 && tfData.ema50 > 0 && tfData.candles?.length >= 2) {
+        const pctAbove = ((stock.price - tfData.ema50) / tfData.ema50) * 100;
+        // Map pctAbove to a score: -5% → 0, 0% → 50, +5% → 100
+        const tfScore = Math.max(0, Math.min(100, 50 + pctAbove * 10));
+        totalScore += tfScore * w;
+      } else {
+        // Not enough data → neutral contribution
+        totalScore += 50 * w;
+      }
+    }
+
+    return Math.round(totalScore / totalWeight);
   }
 
   // ── SECTOR STRENGTH SCORES ───────────────────────────────────
@@ -781,7 +859,8 @@ class KiteService {
                   '1h': s.timeframes['1h']?.signal || 'HOLD',
                   '1d': s.timeframes['1d']?.signal || 'HOLD',
                   '1w': s.timeframes['1w']?.signal || 'HOLD'
-                } : null
+                } : null,
+                multiTfConfidence: this.getMultiTimeframeConfidence(s.symbol)
               })),
               indices: this.marketIndices,
               sectors: this.sectorStrengths,
@@ -907,23 +986,56 @@ class KiteService {
       // Fetch initial prices in batches (Kite LTP limit: ~200 symbols per call)
       const allSymbols = [...trackedSymbols];
       const BATCH = 180;
+      const BATCH_DELAY_MS = 600; // avoid Kite API rate limiting
+      let batchFailures = 0;
       
       for (let i = 0; i < allSymbols.length; i += BATCH) {
         const batch = allSymbols.slice(i, i + BATCH);
-        try {
-          const instruments = batch.map(s => `NSE:${s}`);
-          const ltpData = await this.kite.getLTP(instruments);
-          
-          batch.forEach(symbol => {
-            const key = `NSE:${symbol}`;
-            const price = ltpData[key]?.last_price || 0;
-            if (price > 0) {
-              this.initStock(symbol, price);
+        const batchNum = Math.floor(i / BATCH) + 1;
+        let batchOk = false;
+
+        // Try up to 2 times per batch
+        for (let attempt = 1; attempt <= 2; attempt++) {
+          try {
+            const instruments = batch.map(s => `NSE:${s}`);
+            const ltpData = await this.kite.getLTP(instruments);
+            
+            let batchInitCount = 0;
+            batch.forEach(symbol => {
+              const key = `NSE:${symbol}`;
+              const price = ltpData[key]?.last_price || 0;
+              if (price > 0) {
+                try {
+                  this.initStock(symbol, price);
+                  batchInitCount++;
+                } catch (initErr) {
+                  console.warn(`⚠️  initStock failed for ${symbol}: ${initErr.message}`);
+                }
+              }
+            });
+
+            if (batchInitCount > 0 || attempt === 2) {
+              batchOk = true;
+              if (attempt > 1) console.log(`   ↳ Batch ${batchNum} succeeded on retry (${batchInitCount} stocks)`);
+              break;
             }
-          });
-        } catch (e) {
-          console.warn(`⚠️  LTP batch ${i / BATCH + 1} failed:`, e.message);
+            console.warn(`⚠️  Batch ${batchNum} returned 0 valid prices, retrying...`);
+          } catch (e) {
+            if (attempt === 2) {
+              console.warn(`⚠️  LTP batch ${batchNum} failed after 2 attempts: ${e.message}`);
+              batchFailures++;
+            }
+          }
         }
+
+        // Delay between batches to respect Kite rate limits
+        if (i + BATCH < allSymbols.length) {
+          await new Promise(r => setTimeout(r, BATCH_DELAY_MS));
+        }
+      }
+
+      if (batchFailures > 0) {
+        console.warn(`⚠️  ${batchFailures} LTP batch(es) failed entirely — some stocks may be missing`);
       }
 
       console.log(`✅ Initialized ${Object.keys(this.stocks).length} stocks with live prices`);
@@ -936,7 +1048,7 @@ class KiteService {
       console.log('⚠️  Using stock_master.json as last-resort fallback');
       const defaults = stockMaster.getAllSymbols();
       try {
-        // Batch LTP calls
+        // Batch LTP calls with retry + delay
         const BATCH = 180;
         for (let i = 0; i < defaults.length; i += BATCH) {
           const batch = defaults.slice(i, i + BATCH);
@@ -945,8 +1057,13 @@ class KiteService {
           batch.forEach(symbol => {
             const key = `NSE:${symbol}`;
             const price = ltpData[key]?.last_price || 0;
-            if (price > 0) this.initStock(symbol, price);
+            if (price > 0) {
+              try { this.initStock(symbol, price); } catch (initErr) {}
+            }
           });
+          if (i + BATCH < defaults.length) {
+            await new Promise(r => setTimeout(r, 500));
+          }
         }
         this.isLiveReady = true;
         this.emitAuthStatus();
@@ -1186,7 +1303,8 @@ class KiteService {
             '1h': s.timeframes['1h']?.signal || 'HOLD',
             '1d': s.timeframes['1d']?.signal || 'HOLD',
             '1w': s.timeframes['1w']?.signal || 'HOLD'
-          } : null
+          } : null,
+          multiTfConfidence: this.getMultiTimeframeConfidence(s.symbol)
         })),
         indices: this.marketIndices,
         sectors: this.sectorStrengths,
@@ -1356,7 +1474,8 @@ class KiteService {
                 '1h': s.timeframes['1h']?.signal || 'HOLD',
                 '1d': s.timeframes['1d']?.signal || 'HOLD',
                 '1w': s.timeframes['1w']?.signal || 'HOLD'
-              } : null
+              } : null,
+              multiTfConfidence: this.getMultiTimeframeConfidence(s.symbol)
             })),
             indices: this.marketIndices,
             sectors: this.sectorStrengths,
@@ -1431,6 +1550,12 @@ class KiteService {
           holdingTime,
           recommendation: actionAdvice
         });
+      }
+
+      // Push updated trades to frontend in real-time via WebSocket
+      if (this.io && openTrades.length > 0) {
+        const refreshedTrades = await this.dbService.getTrades();
+        this.io.emit('trades_updated', refreshedTrades);
       }
     } catch (e) { /* DB not connected yet */ }
   }

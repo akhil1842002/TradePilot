@@ -18,7 +18,8 @@ export const useSocket = () => {
     setLastTickTime,
     addAlert,
     favorites,
-    setCircuitHits
+    setCircuitHits,
+    setOpenTrades
   } = useApp();
 
   const socketRef = useRef(null);
@@ -39,6 +40,7 @@ export const useSocket = () => {
   const setConnectionErrorRef = useRef(setConnectionError);
   const setLastTickTimeRef = useRef(setLastTickTime);
   const setCircuitHitsRef = useRef(setCircuitHits);
+  const setOpenTradesRef = useRef(setOpenTrades);
 
   // Keep refs in sync with latest callbacks on every render
   useEffect(() => { addAlertRef.current = addAlert; });
@@ -53,6 +55,7 @@ export const useSocket = () => {
   useEffect(() => { setConnectionErrorRef.current = setConnectionError; });
   useEffect(() => { setLastTickTimeRef.current = setLastTickTime; });
   useEffect(() => { setCircuitHitsRef.current = setCircuitHits; });
+  useEffect(() => { setOpenTradesRef.current = setOpenTrades; });
 
   // Connect socket ONCE and never disconnect on re-renders
   useEffect(() => {
@@ -192,6 +195,11 @@ export const useSocket = () => {
       setIsSimulationRef.current(status.isSimulation);
       setIsConnectedRef.current(status.isConnected);
       setConnectionErrorRef.current(status.error || null);
+    });
+
+    // Handle live open trades P&L updates pushed from backend
+    socket.on('trades_updated', (trades) => {
+      setOpenTradesRef.current(trades);
     });
 
     // Cleanup only on true unmount (not on re-render)

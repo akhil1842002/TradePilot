@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import { FaSearch, FaTimes, FaArrowUp, FaArrowDown, FaFilter } from 'react-icons/fa';
 
@@ -8,6 +8,11 @@ export const CircuitHitsPage = () => {
   const [filterType, setFilterType] = useState('ALL'); // ALL, UPPER, LOWER
   const [sortBy, setSortBy] = useState('time'); // time, change, symbol
   const [dayFilter, setDayFilter] = useState('TODAY'); // TODAY, ALL
+  const [currentPage, setCurrentPage] = useState(1);
+  const ITEMS_PER_PAGE = 20;
+
+  // Reset page when filters change
+  useEffect(() => { setCurrentPage(1); }, [searchQuery, filterType, sortBy, dayFilter]);
 
   // Filter to today only
   const todayHits = useMemo(() => {
@@ -48,6 +53,11 @@ export const CircuitHitsPage = () => {
 
     return result;
   }, [sourceHits, filterType, searchQuery, sortBy]);
+
+  // Reset page when filters change
+  const totalPages = Math.ceil(filtered.length / ITEMS_PER_PAGE) || 1;
+  const safePage = Math.min(currentPage, totalPages);
+  const paginatedHits = filtered.slice((safePage - 1) * ITEMS_PER_PAGE, safePage * ITEMS_PER_PAGE);
 
   const handleClick = (symbol) => {
     setSelectedStock(symbol);
@@ -206,7 +216,7 @@ export const CircuitHitsPage = () => {
                 </tr>
               </thead>
               <tbody>
-                {filtered.map((hit, idx) => {
+                {paginatedHits.map((hit, idx) => {
                   const isUpper = hit.type === 'UPPER';
                   const sign = hit.changePct >= 0 ? '+' : '';
 
@@ -266,11 +276,39 @@ export const CircuitHitsPage = () => {
           </div>
         )}
 
-        {/* Footer stats */}
-        <div className="d-flex justify-content-between align-items-center mt-3 pt-3 border-top" style={{ borderColor: 'var(--tp-border)' }}>
+        {/* Footer stats + Pagination */}
+        <div className="d-flex flex-wrap justify-content-between align-items-center mt-3 pt-3 border-top gap-2" style={{ borderColor: 'var(--tp-border)' }}>
           <span className="text-muted" style={{ fontSize: '0.75rem' }}>
-            Showing <strong style={{ color: 'var(--tp-text)' }}>{filtered.length}</strong> of <strong style={{ color: 'var(--tp-text)' }}>{circuitHits.length}</strong> circuit hits
+            Showing <strong style={{ color: 'var(--tp-text)' }}>{paginatedHits.length}</strong> of <strong style={{ color: 'var(--tp-text)' }}>{filtered.length}</strong> circuit hits
+            {totalPages > 1 && <span> — Page <strong>{safePage}</strong> of <strong>{totalPages}</strong></span>}
           </span>
+          <div className="d-flex align-items-center gap-2">
+            {totalPages > 1 && (
+              <>
+                <button
+                  className="btn btn-sm btn-outline-secondary"
+                  disabled={safePage <= 1}
+                  onClick={() => setCurrentPage(1)}
+                >««</button>
+                <button
+                  className="btn btn-sm btn-outline-secondary"
+                  disabled={safePage <= 1}
+                  onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                >« Prev</button>
+                <span className="text-muted px-2" style={{ fontSize: '0.8rem' }}>{safePage} / {totalPages}</span>
+                <button
+                  className="btn btn-sm btn-outline-secondary"
+                  disabled={safePage >= totalPages}
+                  onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                >Next »</button>
+                <button
+                  className="btn btn-sm btn-outline-secondary"
+                  disabled={safePage >= totalPages}
+                  onClick={() => setCurrentPage(totalPages)}
+                >»»</button>
+              </>
+            )}
+          </div>
           {searchQuery && (
             <button className="btn btn-sm btn-outline-secondary" onClick={() => setSearchQuery('')}>
               <FaTimes className="me-1" /> Clear Search

@@ -40,4 +40,17 @@ router.post('/', async (req, res) => {
   }
 });
 
+// Delete a journal entry
+router.delete('/:id', async (req, res) => {
+  try {
+    const deleted = await storageService.deleteJournalEntry(req.params.id);
+    if (!deleted) {
+      return res.status(404).json({ message: 'Journal entry not found' });
+    }
+    res.json({ message: 'Journal entry deleted', id: req.params.id });
+  } catch (error) {
+    res.status(500).json({ message: 'Error deleting journal entry', error: error.message });
+  }
+});
+
 module.exports = router;

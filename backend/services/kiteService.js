@@ -51,6 +51,9 @@ class KiteService {
     this.favoriteSymbols = new Set(); // prioritised for WebSocket subscription
     this.circuitHits = [];            // [{ symbol, type, price, changePct, time }]
     this._priceTracker = {};          // symbol → { lastPrice, lastChangeTime, frozenSince }
+    this._lastFeedTime = 0;           // timestamp of last successful data feed tick
+    this._wsConnected = false;        // true when Kite WebSocket is connected
+    this._tickDebugDone = false;      // one-time raw tick dump flag
   }
 
   initialize(io, dbService) {
@@ -102,35 +105,46 @@ class KiteService {
 
   // Initialize a single stock entry from live data
   initStock(symbol, price) {
+    const existing = this.stocks[symbol]; // preserve tick data on reconnect
     const meta = stockMaster.enrich(symbol);
     const now = new Date().toISOString();
-    this.stocks[symbol] = {
+    const stock = {
       symbol,
       name: meta.name,
       price,
       open: price,
       high: price,
       low: price,
-      close: price,
-      volume: 0,
+      close: existing ? existing.close : price,
+      previousClose: existing ? existing.previousClose : price,
+      volume: existing ? existing.volume : 0,
       vwap: price,
       sector: meta.sector,
       industry: meta.industry,
       isin: meta.isin,
       mcap: meta.mcap,
       token: meta.token,
-      history: [{ time: now, open: price, high: price, low: price, close: price, volume: 0, vwap: price }],
-      rsi: 50,
-      ema20: price,
-      ema50: price,
-      macd: { macd: 0, signal: 0, hist: 0 },
-      adx: 20,
-      support: price * 0.97,
-      resistance: price * 1.03,
-      depth: { buy: [], sell: [], totalBuyQuantity: 0, totalSellQuantity: 0 },
-      recommendation: { action: 'HOLD', confidence: 50, reasons: ['Waiting for live data...'] },
+      history: existing ? existing.history : [{ time: now, open: price, high: price, low: price, close: price, volume: 0, vwap: price }],
+      rsi: existing ? existing.rsi : 50,
+      ema20: existing ? existing.ema20 : price,
+      ema50: existing ? existing.ema50 : price,
+      macd: existing ? existing.macd : { macd: 0, signal: 0, hist: 0 },
+      adx: existing ? existing.adx : 20,
+      support: existing ? existing.support : price * 0.97,
+      resistance: existing ? existing.resistance : price * 1.03,
+      lastQuantity: existing ? existing.lastQuantity : 0,
+      averagePrice: existing ? existing.averagePrice : price,
+      buyQuantity: existing ? existing.buyQuantity : 0,
+      sellQuantity: existing ? existing.sellQuantity : 0,
+      change: existing ? existing.change : 0,
+      lastTradeTime: existing ? existing.lastTradeTime : null,
+      oi: existing ? existing.oi : 0,
+      oiDayHigh: existing ? existing.oiDayHigh : 0,
+      oiDayLow: existing ? existing.oiDayLow : 0,
+      depth: existing?.depth || { buy: [], sell: [], totalBuyQuantity: 0, totalSellQuantity: 0 },
+      recommendation: existing ? existing.recommendation : { action: 'HOLD', confidence: 50, reasons: ['Waiting for live data...'] },
       // Multi-timeframe tracking (seeded with synthetic history below)
-      timeframes: {
+      timeframes: existing?.timeframes || {
         '1m':  { candles: [{ time: now, open: price, high: price, low: price, close: price }], ema50: price, signal: 'HOLD' },
         '5m':  { candles: [{ time: now, open: price, high: price, low: price, close: price }], ema50: price, signal: 'HOLD' },
         '15m': { candles: [{ time: now, open: price, high: price, low: price, close: price }], ema50: price, signal: 'HOLD' },
@@ -139,6 +153,8 @@ class KiteService {
         '1w':  { candles: [{ time: now, open: price, high: price, low: price, close: price }], ema50: price, signal: 'HOLD' }
       }
     };
+
+    this.stocks[symbol] = stock;
 
     // Multi-timeframe candles are backfilled on the first
     // updateMultiTimeframe() call — no separate seed needed.
@@ -334,11 +350,12 @@ class KiteService {
     // Group stocks by sector (use live stock list, not hardcoded map)
     Object.keys(this.stocks).forEach(symbol => {
       const stock = this.stocks[symbol];
-      if (!stock || !stock.close) return;
+      const prevClose = stock.previousClose || stock.close;
+      if (!stock || !prevClose) return;
       const sector = stock.sector || 'General';
       if (!sectors[sector]) sectors[sector] = { totalChange: 0, count: 0 };
       
-      const changePercent = ((stock.price - stock.close) / stock.close) * 100;
+      const changePercent = ((stock.price - prevClose) / prevClose) * 100;
       sectors[sector].totalChange += changePercent;
       sectors[sector].count += 1;
     });
@@ -364,7 +381,8 @@ class KiteService {
     
     Object.keys(this.stocks).forEach(sym => {
       const s = this.stocks[sym];
-      if (s.price >= s.close) advances++;
+      const prevClose = s.previousClose || s.close;
+      if (s.price >= prevClose) advances++;
       else declines++;
     });
 
@@ -384,7 +402,8 @@ class KiteService {
     let maxMomentumStock = '';
     let maxMomentum = -Infinity;
     Object.keys(this.stocks).forEach(sym => {
-      const change = Math.abs(((this.stocks[sym].price - this.stocks[sym].close) / this.stocks[sym].close) * 100);
+      const prevClose = this.stocks[sym].previousClose || this.stocks[sym].close;
+      const change = Math.abs(((this.stocks[sym].price - prevClose) / prevClose) * 100);
       if (change > maxMomentum) {
         maxMomentum = change;
         maxMomentumStock = sym;
@@ -439,8 +458,10 @@ class KiteService {
       b.total++;
       b.stocks.push(s.symbol);
 
+      const prevClose = s.previousClose || s.close;
+
       // Rising / Falling
-      const change = s.price - s.close;
+      const change = s.price - prevClose;
       if (change > 0) b.rising++;
       else if (change < 0) b.falling++;
       else b.unchanged++;
@@ -452,7 +473,7 @@ class KiteService {
       b.rsiSum += (s.rsi || 50);
 
       // Price change % for sector momentum
-      b.priceChangeSum += s.close > 0 ? ((s.price - s.close) / s.close) * 100 : 0;
+      b.priceChangeSum += prevClose > 0 ? ((s.price - prevClose) / prevClose) * 100 : 0;
     });
 
     // Calculate derived stats & trend per sector
@@ -673,9 +694,10 @@ class KiteService {
       b.total++;
       if (s.ema50 && s.price > s.ema50) b.aboveEMA50++;
       b.rsiSum += (s.rsi || 50);
-      if (s.price > s.close) b.advancers++;
-      else if (s.price < s.close) b.decliners++;
-      b.changeSum += s.close > 0 ? ((s.price - s.close) / s.close) * 100 : 0;
+      const prevClose2 = s.previousClose || s.close;
+      if (s.price > prevClose2) b.advancers++;
+      else if (s.price < prevClose2) b.decliners++;
+      b.changeSum += prevClose2 > 0 ? ((s.price - prevClose2) / prevClose2) * 100 : 0;
 
       // Count multi-timeframe bullish confirmations
       if (s.timeframes) {
@@ -769,6 +791,7 @@ class KiteService {
 
       this.ticker.on('connect', () => {
         console.log('Zerodha Kite Ticker connected.');
+        this._wsConnected = true;
         
         // Ensure simulation and REST polling are stopped (in case started by prior error/disconnect)
         if (this.socketInterval) {
@@ -784,6 +807,7 @@ class KiteService {
         // Fetch positions and build stock list first, then subscribe
         this.fetchPositionsAndBuildStockList().then(async () => {
           await this._initIndexPrevClose();
+          await this._initStockPreviousClose();
           // Stock instrument tokens — from instrument DB + stock master
           let instrumentTokens = stockMaster.getTokenMap();
 
@@ -844,6 +868,7 @@ class KiteService {
               stocks: Object.values(this.stocks).map(s => ({
                 symbol: s.symbol, name: s.name, price: s.price,
                 open: s.open, high: s.high, low: s.low, close: s.close,
+                previousClose: s.previousClose,
                 volume: s.volume, vwap: Number(s.vwap.toFixed(2)),
                 sector: s.sector, industry: s.industry, isin: s.isin, mcap: s.mcap, token: s.token,
                 rsi: Number(s.rsi.toFixed(2)),
@@ -851,6 +876,15 @@ class KiteService {
                 macd: s.macd, adx: Number(s.adx.toFixed(2)),
                 support: Number(s.support.toFixed(2)),
                 resistance: Number(s.resistance.toFixed(2)),
+                lastQuantity: s.lastQuantity,
+                averagePrice: s.averagePrice,
+                buyQuantity: s.buyQuantity,
+                sellQuantity: s.sellQuantity,
+                change: s.change,
+                lastTradeTime: s.lastTradeTime,
+                oi: s.oi,
+                oiDayHigh: s.oiDayHigh,
+                oiDayLow: s.oiDayLow,
                 depth: s.depth, recommendation: s.recommendation,
                 multiTf: s.timeframes ? {
                   '1m': s.timeframes['1m']?.signal || 'HOLD',
@@ -886,6 +920,7 @@ class KiteService {
 
       this.ticker.on('error', (err) => {
         console.error('Kite Ticker error:', err.message || err);
+        this._wsConnected = false;
         // Try REST API polling as fallback instead of simulation
         if (!this.isSimulation) {
           console.log('WebSocket ticker failed. Falling back to REST API polling for live data.');
@@ -900,6 +935,7 @@ class KiteService {
 
       this.ticker.on('close', () => {
         console.log('Kite Ticker connection closed.');
+        this._wsConnected = false;
         if (!this.isSimulation) {
           console.log('WebSocket closed. Falling back to REST API polling.');
           this.emitSignal(
@@ -1110,8 +1146,61 @@ class KiteService {
     }
   }
 
+  // ── Initialize stock previous close from Quote API ──────────
+  // Fixes the restart edge‑case: even when the market is closed,
+  // stocks get their real yesterday's close via getQuote OHLC.
+  async _initStockPreviousClose() {
+    if (!this.kite) return;
+    const symbols = Object.keys(this.stocks);
+    if (symbols.length === 0) return;
+
+    const BATCH = 180; // Kite getQuote limit (~200)
+    let updated = 0;
+
+    console.log(`📊 Fetching OHLC quotes for ${symbols.length} stocks...`);
+
+    for (let i = 0; i < symbols.length; i += BATCH) {
+      const batch = symbols.slice(i, i + BATCH);
+      const instruments = batch.map(s => `NSE:${s}`);
+
+      try {
+        const quotes = await this.kite.getQuote(instruments);
+
+        batch.forEach(symbol => {
+          const key = `NSE:${symbol}`;
+          const q = quotes[key];
+          const stock = this.stocks[symbol];
+          if (!stock) return;
+
+          if (q?.ohlc?.close && q.ohlc.close > 0) {
+            // Real yesterday's close from OHLC — overwrite LTP fallback
+            stock.previousClose = q.ohlc.close;
+            stock.close = q.ohlc.close;
+            // Also seed today's OHLC from the quote (more accurate than all-LTP)
+            if (q.ohlc.open  && q.ohlc.open > 0)  stock.open  = q.ohlc.open;
+            if (q.ohlc.high  && q.ohlc.high > 0)  stock.high  = q.ohlc.high;
+            if (q.ohlc.low   && q.ohlc.low > 0)   stock.low   = q.ohlc.low;
+            if (q.last_price && q.last_price > 0)  stock.price = q.last_price;
+            updated++;
+          }
+        });
+      } catch (e) {
+        // One batch failure shouldn't kill the whole init
+        console.warn(`⚠️  Quote batch ${Math.floor(i / BATCH) + 1} failed: ${e.message}`);
+      }
+
+      // Rate-limit between batches
+      if (i + BATCH < symbols.length) {
+        await new Promise(r => setTimeout(r, 500));
+      }
+    }
+
+    console.log(`✅ Stock previous close updated for ${updated}/${symbols.length} stocks via Quote API`);
+  }
+
   // ── Shared Circuit Detection (used by both WS and REST) ──────
-  _detectCircuitHit(symbol, stock, price) {
+  // tickData = raw tick (WS) or LTP response (REST) — may carry circuit limits
+  _detectCircuitHit(symbol, stock, price, tickData = null) {
     const trk = this._priceTracker[symbol] || { lastPrice: price, lastChangeTime: Date.now(), frozenSince: null };
     const nowTs = Date.now();
     if (price !== trk.lastPrice) {
@@ -1123,46 +1212,139 @@ class KiteService {
     }
     this._priceTracker[symbol] = trk;
 
-    // Real circuit detection: price frozen with zero volume at circuit limit
-    const frozenMs = trk.frozenSince ? (nowTs - trk.frozenSince) : 0;
-    const minFreezeMs = this.restPollInterval ? 30000 : 60000; // 30s REST, 60s WS
-    // Only flag if previous close is different from current price (stock has real OHLC data)
-    if (frozenMs > minFreezeMs && stock.close > 0 && Math.abs(price - stock.close) > 0.01) {
-      const chgPct = ((price - stock.close) / stock.close) * 100;
-      const absChg = Math.abs(chgPct);
-      // Common Indian circuit limits: 2%, 5%, 10%, 20% — detect ≥ 4.5%
-      const nearCircuit = absChg >= 4.5;
-      // Real circuit = no trading volume (frozen!)
-      const volumeIsZero = !stock.volume || stock.volume <= 10;
-      const alreadyRecorded = this.circuitHits.find(h => h.symbol === symbol && (nowTs - new Date(h.time).getTime() < 900000));
+    const prevClose = stock.previousClose || stock.close;
+    if (!prevClose || prevClose <= 0) return;
+    if (Math.abs(price - prevClose) < 0.01) return; // no meaningful change
 
-      if (nearCircuit && volumeIsZero && !alreadyRecorded) {
-        const type = chgPct > 0 ? 'UPPER' : 'LOWER';
-        const hit = {
-          symbol,
-          name: stock.name,
-          type,
-          price,
-          changePct: Number(chgPct.toFixed(2)),
-          time: new Date().toISOString(),
-          sector: stock.sector
-        };
-        const today = new Date().toDateString();
-        if (this._circuitDate !== today) {
-          this.circuitHits = [];
-          this._circuitDate = today;
-        }
-        this.circuitHits.unshift(hit);
-        if (this.circuitHits.length > 100) this.circuitHits = this.circuitHits.slice(0, 100);
-        console.log(`🔒 CIRCUIT ${type}: ${symbol} @ ₹${price} (${chgPct >= 0 ? '+' : ''}${chgPct.toFixed(2)}%) — frozen ${Math.round(frozenMs/1000)}s, vol=${stock.volume}`);
-        if (this.io) {
-          this.io.emit('circuit_hit', hit);
-        }
+    // ── 1. Market must be open ──────────────────────────────
+    if (!this._isMarketOpen()) return;
+
+    // ── 2. Feed must be healthy ──────────────────────────────
+    if (!this._isFeedHealthy()) return;
+
+    // ── 3. Must be frozen for at least 2 minutes ─────────────
+    const frozenMs = trk.frozenSince ? (nowTs - trk.frozenSince) : 0;
+    const minFreezeMs = 120000;
+    if (frozenMs < minFreezeMs) return;
+
+    // ── 4. Price must be at a circuit limit ──────────────────
+    const chgPct = ((price - prevClose) / prevClose) * 100;
+    const absChg = Math.abs(chgPct);
+    const TOLERANCE_PCT = 0.3; // ±0.3% from exact circuit level
+
+    // Kite API does NOT provide exchange circuit limits in tick data.
+    // Match against standard Indian circuit bands: 2%, 3%, 4%, 5%, 10%, 20%
+    const circuitLevels = [2, 3, 4, 5, 10, 20];
+    const matchesCircuit = circuitLevels.some(level => Math.abs(absChg - level) <= TOLERANCE_PCT);
+
+    if (!matchesCircuit) return;
+
+    // ── 5. Volume must be essentially frozen ──────────────────
+    const volumeIsZero = !stock.volume || stock.volume <= 10;
+
+    // ── 6. Secondary guard: market-wide freeze check ──────────
+    //     (catches exchange outages / network issues)
+    const totalStocks = Object.keys(this.stocks).length;
+    if (totalStocks > 0) {
+      let frozenCount = 0;
+      const checkWindow = 120000;
+      Object.keys(this._priceTracker).forEach(sym => {
+        const t = this._priceTracker[sym];
+        if (t?.frozenSince && (nowTs - t.frozenSince) >= checkWindow) frozenCount++;
+      });
+      if (frozenCount / totalStocks > 0.6) {
+        console.log(`⚠️  Circuit check skipped: ${frozenCount}/${totalStocks} stocks frozen — market likely closed or feed issue`);
+        return;
+      }
+    }
+
+    // ── 7. Dedup: already recorded recently? ──────────────────
+    const alreadyRecorded = this.circuitHits.find(
+      h => h.symbol === symbol && (nowTs - new Date(h.time).getTime() < 900000)
+    );
+
+    if (volumeIsZero && !alreadyRecorded) {
+      const type = chgPct > 0 ? 'UPPER' : 'LOWER';
+      const hit = {
+        symbol,
+        name: stock.name,
+        type,
+        price,
+        changePct: Number(chgPct.toFixed(2)),
+        time: new Date().toISOString(),
+        sector: stock.sector
+      };
+      const today = new Date().toDateString();
+      if (this._circuitDate !== today) {
+        this.circuitHits = [];
+        this._circuitDate = today;
+      }
+      this.circuitHits.unshift(hit);
+      if (this.circuitHits.length > 100) this.circuitHits = this.circuitHits.slice(0, 100);
+      console.log(`🔒 CIRCUIT ${type}: ${symbol} @ ₹${price} (${chgPct >= 0 ? '+' : ''}${chgPct.toFixed(2)}%) — frozen ${Math.round(frozenMs/1000)}s, vol=${stock.volume}`);
+      if (this.io) {
+        this.io.emit('circuit_hit', hit);
       }
     }
   }
 
+  // ── Check if NSE market is currently open ────────────────────
+  _isMarketOpen() {
+    const now = new Date();
+    const day = now.getUTCDay(); // 0=Sun, 6=Sat
+    if (day === 0 || day === 6) return false; // weekend
+
+    // NSE hours: 9:15 AM – 3:30 PM IST (UTC+5:30)
+    // Convert current UTC time to IST hours
+    const istHours = now.getUTCHours() + 5 + (now.getUTCMinutes() + 30 >= 60 ? 1 : 0);
+    const istMinutes = (now.getUTCMinutes() + 30) % 60;
+    const istTotalMinutes = istHours * 60 + istMinutes;
+
+    const marketOpen = 9 * 60 + 15;  // 09:15
+    const marketClose = 15 * 60 + 30; // 15:30
+
+    return istTotalMinutes >= marketOpen && istTotalMinutes <= marketClose;
+  }
+
+  // ── Check if data feed is healthy ────────────────────────────
+  _isFeedHealthy() {
+    // WebSocket is connected OR REST polling is active
+    if (this._wsConnected) return true;
+    if (this.restPollInterval) return true;
+    // If we have recent ticks within the last 30 seconds
+    if (this._lastFeedTime && (Date.now() - this._lastFeedTime) < 30000) return true;
+    return false;
+  }
+
   processKiteTicks(ticks) {
+    this._lastFeedTime = Date.now(); // feed is healthy — live ticks arriving
+
+    // ── One-time debug: dump raw tick to verify available fields ──
+    if (!this._tickDebugDone && ticks.length > 0) {
+      this._tickDebugDone = true;
+      const sample = ticks[0];
+      const keys = Object.keys(sample).filter(k => k !== 'last_quantity' && k !== 'average_trade_price');
+      console.log('🔍 RAW TICK SAMPLE (fields available in FULL mode):');
+      keys.forEach(k => {
+        const v = sample[k];
+        if (typeof v === 'object') {
+          console.log(`   ${k}:`, JSON.stringify(v).slice(0, 120));
+        } else {
+          console.log(`   ${k}: ${v}`);
+        }
+      });
+      if (sample.upper_circuit_limit !== undefined) {
+        console.log('✅ upper_circuit_limit AVAILABLE:', sample.upper_circuit_limit);
+      } else {
+        console.log('⚠️  upper_circuit_limit NOT in tick — exchange may not provide it');
+      }
+      if (sample.lower_circuit_limit !== undefined) {
+        console.log('✅ lower_circuit_limit AVAILABLE:', sample.lower_circuit_limit);
+      } else {
+        console.log('⚠️  lower_circuit_limit NOT in tick — exchange may not provide it');
+      }
+    }
+
     // Map instrument tokens back to symbols (from stock master)
     const tokenToSymbol = stockMaster.getTokenToSymbolMap();
 
@@ -1212,15 +1394,35 @@ class KiteService {
         priceLog.push(`${symbol}:₹${tick.last_price}${arrow}`);
 
         // ── Circuit Hit Detection ──────────────────────────────
-        this._detectCircuitHit(symbol, stock, tick.last_price);
+        this._detectCircuitHit(symbol, stock, tick.last_price, tick);
       }
       if (tick.ohlc) {
         stock.open = tick.ohlc.open;
         stock.high = tick.ohlc.high;
         stock.low = tick.ohlc.low;
-        stock.close = tick.ohlc.close;
+        stock.close = tick.ohlc.close;           // yesterday's close from OHLC
+        stock.previousClose = tick.ohlc.close;    // explicit previousClose field
       }
       if (tick.volume_traded) stock.volume = tick.volume_traded;
+
+      // Store additional tick fields from Kite WebSocket
+      if (tick.last_quantity !== undefined)   stock.lastQuantity   = tick.last_quantity;
+      if (tick.average_price !== undefined)   stock.averagePrice   = tick.average_price;
+      if (tick.buy_quantity !== undefined)    stock.buyQuantity    = tick.buy_quantity;
+      if (tick.sell_quantity !== undefined)   stock.sellQuantity   = tick.sell_quantity;
+      if (tick.change !== undefined)          stock.change         = tick.change;
+      if (tick.last_trade_time !== undefined) stock.lastTradeTime  = tick.last_trade_time;
+      if (tick.oi !== undefined)              stock.oi             = tick.oi;
+      if (tick.oi_day_high !== undefined)     stock.oiDayHigh      = tick.oi_day_high;
+      if (tick.oi_day_low !== undefined)      stock.oiDayLow       = tick.oi_day_low;
+
+      // ── Suspicious move logging (log only, never reject) ──────
+      if (oldPrice > 0 && stock.previousClose > 0) {
+        const movePct = Math.abs((tick.last_price - oldPrice) / oldPrice) * 100;
+        if (movePct >= 5) {
+          console.log(`⚠️  LARGE TICK: ${symbol} moved ${movePct.toFixed(1)}% in one tick — ₹${oldPrice} → ₹${tick.last_price} (prevClose=₹${stock.previousClose})`);
+        }
+      }
 
       // Push to history
       stock.history.push({
@@ -1279,6 +1481,7 @@ class KiteService {
           high: s.high,
           low: s.low,
           close: s.close,
+          previousClose: s.previousClose,
           volume: s.volume,
           vwap: Number(s.vwap.toFixed(2)),
           sector: s.sector,
@@ -1293,6 +1496,15 @@ class KiteService {
           adx: Number(s.adx.toFixed(2)),
           support: Number(s.support.toFixed(2)),
           resistance: Number(s.resistance.toFixed(2)),
+          lastQuantity: s.lastQuantity,
+          averagePrice: s.averagePrice,
+          buyQuantity: s.buyQuantity,
+          sellQuantity: s.sellQuantity,
+          change: s.change,
+          lastTradeTime: s.lastTradeTime,
+          oi: s.oi,
+          oiDayHigh: s.oiDayHigh,
+          oiDayLow: s.oiDayLow,
           depth: s.depth,
           recommendation: s.recommendation,
           unusualMove: s.recommendation?.unusualMove || null,
@@ -1330,6 +1542,7 @@ class KiteService {
     // Fetch positions and build stock list first
     this.fetchPositionsAndBuildStockList().then(async () => {
       await this._initIndexPrevClose();
+      await this._initStockPreviousClose();
       if (this.restPollInterval) return; // already cancelled
       this.startPollingLoop();
     });
@@ -1370,6 +1583,8 @@ class KiteService {
             console.warn(`⚠️  LTP batch ${Math.floor(i / LTP_BATCH) + 1} failed:`, e.message);
           }
         }
+
+        this._lastFeedTime = Date.now(); // feed is healthy — REST data arrived
         
         // Build price log line
         const priceLog = [];
@@ -1411,8 +1626,36 @@ class KiteService {
               const arrow = data.last_price > oldPrice ? '↑' : (data.last_price < oldPrice ? '↓' : '·');
               priceLog.push(`${symbol}:₹${data.last_price}${arrow}`);
 
+              // ── OHLC update (when available from REST) ─────────
+              if (data.ohlc) {
+                stock.open = data.ohlc.open;
+                stock.high = data.ohlc.high;
+                stock.low = data.ohlc.low;
+                stock.close = data.ohlc.close;
+                stock.previousClose = data.ohlc.close;
+              }
+
+              // ── Suspicious move logging (log only, never reject) ──
+              if (oldPrice > 0 && stock.previousClose > 0) {
+                const movePct = Math.abs((data.last_price - oldPrice) / oldPrice) * 100;
+                if (movePct >= 5) {
+                  console.log(`⚠️  LARGE TICK (REST): ${symbol} moved ${movePct.toFixed(1)}% in one poll — ₹${oldPrice} → ₹${data.last_price} (prevClose=₹${stock.previousClose})`);
+                }
+              }
+
               // ── Circuit Detection (REST polling) ──────────────
-              this._detectCircuitHit(symbol, stock, data.last_price);
+              this._detectCircuitHit(symbol, stock, data.last_price, data);
+
+              // Store additional fields from REST LTP response
+              if (data.last_quantity !== undefined)   stock.lastQuantity   = data.last_quantity;
+              if (data.average_price !== undefined)   stock.averagePrice   = data.average_price;
+              if (data.buy_quantity !== undefined)    stock.buyQuantity    = data.buy_quantity;
+              if (data.sell_quantity !== undefined)   stock.sellQuantity   = data.sell_quantity;
+              if (data.change !== undefined)          stock.change         = data.change;
+              if (data.last_trade_time !== undefined) stock.lastTradeTime  = data.last_trade_time;
+              if (data.oi !== undefined)              stock.oi             = data.oi;
+              if (data.oi_day_high !== undefined)     stock.oiDayHigh      = data.oi_day_high;
+              if (data.oi_day_low !== undefined)      stock.oiDayLow       = data.oi_day_low;
 
               // Update latest candle
               const latest = stock.history[stock.history.length - 1];
@@ -1459,12 +1702,23 @@ class KiteService {
             stocks: Object.values(this.stocks).map(s => ({
               symbol: s.symbol, name: s.name, price: s.price,
               open: s.open, high: s.high, low: s.low, close: s.close,
+              previousClose: s.previousClose,
               volume: s.volume, vwap: Number(s.vwap.toFixed(2)),
-              sector: s.sector, rsi: Number(s.rsi.toFixed(2)),
+              sector: s.sector, industry: s.industry, isin: s.isin, mcap: s.mcap, token: s.token,
+              rsi: Number(s.rsi.toFixed(2)),
               ema20: Number(s.ema20.toFixed(2)), ema50: Number(s.ema50.toFixed(2)),
               macd: s.macd, adx: Number(s.adx.toFixed(2)),
               support: Number(s.support.toFixed(2)),
               resistance: Number(s.resistance.toFixed(2)),
+              lastQuantity: s.lastQuantity,
+              averagePrice: s.averagePrice,
+              buyQuantity: s.buyQuantity,
+              sellQuantity: s.sellQuantity,
+              change: s.change,
+              lastTradeTime: s.lastTradeTime,
+              oi: s.oi,
+              oiDayHigh: s.oiDayHigh,
+              oiDayLow: s.oiDayLow,
               depth: s.depth, recommendation: s.recommendation,
               unusualMove: s.recommendation?.unusualMove || null,
               multiTf: s.timeframes ? {

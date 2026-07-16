@@ -166,8 +166,9 @@ export const WatchlistManager = () => {
                   </tr>
                 ) : (
                   paginatedStocks.map((s) => {
-                    const isUp = s.price >= (s.close || s.price);
-                    const changePct = s.close ? (((s.price - s.close) / s.close) * 100).toFixed(2) : '0.00';
+                    const refPrice = s.previousClose || s.close || s.price;
+                    const isUp = s.price >= refPrice;
+                    const changePct = (s.previousClose || s.close) ? (((s.price - refPrice) / refPrice) * 100).toFixed(2) : '0.00';
                     const changeColor = isUp ? 'text-success' : 'text-danger';
 
                     let badgeClass = 'badge-hold';

@@ -157,6 +157,20 @@ const storageService = {
     }
   },
 
+  async deleteJournalEntry(id) {
+    if (isMongoConnected()) {
+      const deleted = await Journal.findByIdAndDelete(id);
+      return deleted;
+    } else {
+      const journal = readJsonFile('journal.json');
+      const idx = journal.findIndex(e => e._id === id || e.id === id);
+      if (idx === -1) return null;
+      const removed = journal.splice(idx, 1)[0];
+      writeJsonFile('journal.json', journal);
+      return removed;
+    }
+  },
+
   // --- WATCHLISTS ---
   async getWatchlists() {
     if (isMongoConnected()) {

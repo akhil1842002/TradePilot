@@ -378,8 +378,9 @@ export const MarketScanner = () => {
               </tr>
             ) : (
               paginatedStocks.map(stock => {
-                const changeVal = stock.price - stock.close;
-                const changePct = ((changeVal / stock.close) * 100).toFixed(2);
+                const refPrice = stock.previousClose || stock.close || stock.price;
+                const changeVal = stock.price - refPrice;
+                const changePct = (stock.previousClose || stock.close) ? ((changeVal / refPrice) * 100).toFixed(2) : '0.00';
                 const isUp = changeVal >= 0;
                 const changeColor = isUp ? 'text-success' : 'text-danger';
                 const macdColor = stock.macd?.hist >= 0 ? 'text-success' : 'text-danger';

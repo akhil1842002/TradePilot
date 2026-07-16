@@ -231,7 +231,7 @@ class DecisionEngine {
 
     const now = history[history.length - 1];
     const currentPrice = now.close;
-    const prevClose = stock.close; // yesterday's close from the stock tick
+    const prevClose = stock.previousClose || stock.close; // yesterday's close
 
     // Need at least a previous close to compare
     if (!prevClose || prevClose <= 0) return null;

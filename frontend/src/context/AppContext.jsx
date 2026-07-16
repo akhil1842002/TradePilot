@@ -321,6 +321,23 @@ export const AppProvider = ({ children }) => {
       return { success: false, error: 'Error saving journal entry' };
     }
   };
+
+  // Delete journal entry
+  const deleteJournalEntry = async (id) => {
+    try {
+      await axios.delete(`${API_BASE}/journal/${id}`);
+      setJournalEntries((prev) => prev.filter(e => (e._id || e.id) !== id));
+      addAlert({
+        title: 'Journal Entry Deleted',
+        message: 'The journal entry has been removed.',
+        type: 'HOLD'
+      });
+      return { success: true };
+    } catch (e) {
+      console.error(e);
+      return { success: false, error: 'Error deleting journal entry' };
+    }
+  };
   // Sync live positions from Zerodha Kite Connect
   const syncKitePositions = async () => {
     try {
@@ -412,6 +429,7 @@ export const AppProvider = ({ children }) => {
       syncKitePositions,
       journalEntries,
       createJournalEntry,
+      deleteJournalEntry,
       analytics,
       fetchAnalytics,
       searchQuery,

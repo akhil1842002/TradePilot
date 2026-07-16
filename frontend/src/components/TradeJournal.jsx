@@ -1,9 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
-import { FaBook, FaPlusCircle, FaHeart, FaExclamationTriangle, FaFileImage } from 'react-icons/fa';
+import { FaBook, FaPlusCircle, FaHeart, FaExclamationTriangle, FaFileImage, FaTrash } from 'react-icons/fa';
+import ConfirmModal from './ConfirmModal';
 
 export const TradeJournal = () => {
-  const { journalEntries, createJournalEntry } = useApp();
+  const { journalEntries, createJournalEntry, deleteJournalEntry } = useApp();
 
   // Manual Logger Form state
   const [showAddForm, setShowAddForm] = useState(false);
@@ -18,6 +19,14 @@ export const TradeJournal = () => {
   const [mistake, setMistake] = useState('None');
   const [notes, setNotes] = useState('');
   const [screenshot, setScreenshot] = useState(''); // Simple base64/url mock
+  const [currentPage, setCurrentPage] = useState(1);
+  const ITEMS_PER_PAGE = 10;
+
+  // Custom confirm modal state
+  const [confirmModal, setConfirmModal] = useState({ show: false, id: null });
+
+  // Reset page when entries change
+  useEffect(() => { setCurrentPage(1); }, [journalEntries.length]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -53,6 +62,29 @@ export const TradeJournal = () => {
       setShowAddForm(false);
     }
   };
+
+  const handleDeleteClick = (id) => {
+    setConfirmModal({ show: true, id });
+  };
+
+  const handleDeleteConfirm = async () => {
+    const id = confirmModal.id;
+    setConfirmModal({ show: false, id: null });
+    if (!id) return;
+    const res = await deleteJournalEntry(id);
+    if (!res.success) {
+      alert('Failed to delete journal entry. Please try again.');
+    }
+  };
+
+  const handleDeleteCancel = () => {
+    setConfirmModal({ show: false, id: null });
+  };
+
+  // Pagination
+  const totalPages = Math.ceil(journalEntries.length / ITEMS_PER_PAGE) || 1;
+  const safePage = Math.min(currentPage, totalPages);
+  const paginatedEntries = journalEntries.slice((safePage - 1) * ITEMS_PER_PAGE, safePage * ITEMS_PER_PAGE);
 
   return (
     <div className="d-flex flex-column gap-4">
@@ -204,24 +236,26 @@ export const TradeJournal = () => {
                 <th>Emotion</th>
                 <th>Mistake</th>
                 <th>Notes</th>
+                <th className="text-center">Del</th>
               </tr>
             </thead>
             <tbody>
               {journalEntries.length === 0 ? (
                 <tr>
-                  <td colSpan="10" className="text-center text-muted py-5">
+                  <td colSpan="11" className="text-center text-muted py-5">
                     No logs found. Exit open trades or click 'Log Manual Trade' to create logs.
                   </td>
                 </tr>
               ) : (
-                journalEntries.map((entry) => {
+                paginatedEntries.map((entry) => {
                   const pnl = entry.profit - entry.loss;
                   const isProfit = pnl >= 0;
                   const pnlColor = isProfit ? 'text-success' : 'text-danger';
                   const dateStr = new Date(entry.createdAt).toLocaleDateString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+                  const entryId = entry._id || entry.id;
 
                   return (
-                    <tr key={entry._id || entry.id}>
+                    <tr key={entryId}>
                       <td className="text-muted" style={{ fontSize: '0.8rem' }}>{dateStr}</td>
                       <td className="fw-bold text-white">{entry.symbol}</td>
                       <td>
@@ -252,6 +286,16 @@ export const TradeJournal = () => {
                       <td className="text-muted" style={{ fontSize: '0.8rem', maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                         {entry.notes}
                       </td>
+                      <td className="text-center">
+                        <button
+                          className="btn btn-sm btn-outline-danger border-0"
+                          style={{ padding: '2px 6px' }}
+                          title="Delete entry"
+                          onClick={() => handleDeleteClick(entryId)}
+                        >
+                          <FaTrash style={{ fontSize: '0.7rem' }} />
+                        </button>
+                      </td>
                     </tr>
                   );
                 })
@@ -259,7 +303,38 @@ export const TradeJournal = () => {
             </tbody>
           </table>
         </div>
+
+        {/* Pagination */}
+        {journalEntries.length > 0 && (
+          <div className="d-flex flex-wrap justify-content-between align-items-center mt-3 pt-3 border-top gap-2" style={{ borderColor: 'var(--tp-border)' }}>
+            <span className="text-muted" style={{ fontSize: '0.75rem' }}>
+              Showing <strong style={{ color: 'var(--tp-text)' }}>{paginatedEntries.length}</strong> of <strong style={{ color: 'var(--tp-text)' }}>{journalEntries.length}</strong> entries
+              {totalPages > 1 && <span> — Page <strong>{safePage}</strong> of <strong>{totalPages}</strong></span>}
+            </span>
+            {totalPages > 1 && (
+              <div className="d-flex align-items-center gap-2">
+                <button className="btn btn-sm btn-outline-secondary" disabled={safePage <= 1} onClick={() => setCurrentPage(1)}>««</button>
+                <button className="btn btn-sm btn-outline-secondary" disabled={safePage <= 1} onClick={() => setCurrentPage(p => Math.max(1, p - 1))}>« Prev</button>
+                <span className="text-muted px-2" style={{ fontSize: '0.8rem' }}>{safePage} / {totalPages}</span>
+                <button className="btn btn-sm btn-outline-secondary" disabled={safePage >= totalPages} onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}>Next »</button>
+                <button className="btn btn-sm btn-outline-secondary" disabled={safePage >= totalPages} onClick={() => setCurrentPage(totalPages)}>»»</button>
+              </div>
+            )}
+          </div>
+        )}
       </div>
+
+      {/* Custom Confirm Modal */}
+      <ConfirmModal
+        show={confirmModal.show}
+        title="Delete Journal Entry"
+        message="Are you sure you want to delete this journal entry? This action cannot be undone."
+        confirmLabel="Delete"
+        cancelLabel="Cancel"
+        variant="danger"
+        onConfirm={handleDeleteConfirm}
+        onCancel={handleDeleteCancel}
+      />
     </div>
   );
 };

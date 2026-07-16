@@ -162,8 +162,9 @@ export const StockDetail = () => {
     }
   };
 
-  const changeVal = stock.price - stock.close;
-  const changePct = ((changeVal / stock.close) * 100).toFixed(2);
+  const refPrice = stock.previousClose || stock.close || stock.price;
+  const changeVal = stock.price - refPrice;
+  const changePct = (stock.previousClose || stock.close) ? ((changeVal / refPrice) * 100).toFixed(2) : '0.00';
   const isUp = changeVal >= 0;
 
   const totalDepth = stock.depth.totalBuyQuantity + stock.depth.totalSellQuantity;
@@ -468,11 +469,58 @@ export const StockDetail = () => {
                   </div>
                   <div className="d-flex justify-content-between border-bottom border-dark pb-1.5" style={{ fontSize: '0.85rem' }}>
                     <span className="text-muted">Yesterday Close</span>
-                    <span className="fw-bold text-white">₹{stock.close.toFixed(2)}</span>
+                    <span className="fw-bold text-white">₹{((stock.previousClose || stock.close) || 0).toFixed(2)}</span>
                   </div>
                   <div className="d-flex justify-content-between pb-1.5" style={{ fontSize: '0.85rem' }}>
                     <span className="text-muted">Support / Resistance</span>
                     <span className="fw-bold text-info">₹{stock.support} / ₹{stock.resistance}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Kite Tick Data Card */}
+            <div className="col-12 col-md-6">
+              <div className="tp-card h-100">
+                <h6 className="fw-bold text-white border-bottom border-secondary pb-2 mb-3">Market Depth & Tick Data</h6>
+                <div className="d-flex flex-column gap-2.5">
+                  <div className="d-flex justify-content-between border-bottom border-dark pb-1.5" style={{ fontSize: '0.85rem' }}>
+                    <span className="text-muted">Last Quantity</span>
+                    <span className="fw-bold text-white">{stock.lastQuantity ?? '—'}</span>
+                  </div>
+                  <div className="d-flex justify-content-between border-bottom border-dark pb-1.5" style={{ fontSize: '0.85rem' }}>
+                    <span className="text-muted">Average Price</span>
+                    <span className="fw-bold text-white">{stock.averagePrice ? `₹${Number(stock.averagePrice).toFixed(2)}` : '—'}</span>
+                  </div>
+                  <div className="d-flex justify-content-between border-bottom border-dark pb-1.5" style={{ fontSize: '0.85rem' }}>
+                    <span className="text-muted">Buy / Sell Qty</span>
+                    <span className="fw-bold text-white">
+                      <span style={{ color: '#22C55E' }}>{stock.buyQuantity ?? '—'}</span>
+                      <span className="text-muted mx-1">/</span>
+                      <span style={{ color: '#EF4444' }}>{stock.sellQuantity ?? '—'}</span>
+                    </span>
+                  </div>
+                  <div className="d-flex justify-content-between border-bottom border-dark pb-1.5" style={{ fontSize: '0.85rem' }}>
+                    <span className="text-muted">Change</span>
+                    <span className={`fw-bold ${(stock.change || 0) >= 0 ? 'text-success' : 'text-danger'}`}>
+                      {stock.change != null ? `${stock.change >= 0 ? '+' : ''}${Number(stock.change).toFixed(2)}%` : '—'}
+                    </span>
+                  </div>
+                  <div className="d-flex justify-content-between border-bottom border-dark pb-1.5" style={{ fontSize: '0.85rem' }}>
+                    <span className="text-muted">Open Interest</span>
+                    <span className="fw-bold text-white">{stock.oi != null ? stock.oi.toLocaleString('en-IN') : '—'}</span>
+                  </div>
+                  <div className="d-flex justify-content-between border-bottom border-dark pb-1.5" style={{ fontSize: '0.85rem' }}>
+                    <span className="text-muted">OI Day High / Low</span>
+                    <span className="fw-bold text-white">
+                      {(stock.oiDayHigh != null && stock.oiDayHigh > 0) ? stock.oiDayHigh.toLocaleString('en-IN') : '—'}
+                      <span className="text-muted mx-1">/</span>
+                      {(stock.oiDayLow != null && stock.oiDayLow > 0) ? stock.oiDayLow.toLocaleString('en-IN') : '—'}
+                    </span>
+                  </div>
+                  <div className="d-flex justify-content-between pb-1.5" style={{ fontSize: '0.85rem' }}>
+                    <span className="text-muted">Total Volume</span>
+                    <span className="fw-bold text-white">{stock.volume > 0 ? stock.volume.toLocaleString('en-IN') : '—'}</span>
                   </div>
                 </div>
               </div>

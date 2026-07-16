@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
-import { FaTrash, FaPlus, FaEye, FaSync } from 'react-icons/fa';
+import { FaTrash, FaPlus, FaEye, FaSync, FaChevronLeft, FaChevronRight } from 'react-icons/fa';
 import axios from 'axios';
 
 const API_BASE = 'http://localhost:5000/api';
@@ -18,6 +18,8 @@ export const WatchlistManager = () => {
 
   const [newSymbol, setNewSymbol] = useState('');
   const [availableStocks, setAvailableStocks] = useState([]);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
 
   // Fetch available stocks for autocomplete
   useEffect(() => {
@@ -68,6 +70,14 @@ export const WatchlistManager = () => {
   };
 
   const wlStocksData = currentWl.stocks.map(sym => stocks.find(s => s.symbol === sym)).filter(Boolean);
+
+  // Pagination
+  const totalPages = Math.max(1, Math.ceil(wlStocksData.length / pageSize));
+  const safePage = Math.min(page, totalPages);
+  const paginatedStocks = wlStocksData.slice((safePage - 1) * pageSize, safePage * pageSize);
+
+  // Reset to page 1 when watchlist changes
+  useEffect(() => { setPage(1); }, [activeWatchlist]);
 
   return (
     <div className="row g-4">
@@ -148,14 +158,14 @@ export const WatchlistManager = () => {
                 </tr>
               </thead>
               <tbody>
-                {wlStocksData.length === 0 ? (
+                {paginatedStocks.length === 0 ? (
                   <tr>
                     <td colSpan="9" className="text-center text-muted py-5">
                       Empty watchlist. Click <strong>Sync Live Positions</strong> or add stocks manually.
                     </td>
                   </tr>
                 ) : (
-                  wlStocksData.map((s) => {
+                  paginatedStocks.map((s) => {
                     const isUp = s.price >= (s.close || s.price);
                     const changePct = s.close ? (((s.price - s.close) / s.close) * 100).toFixed(2) : '0.00';
                     const changeColor = isUp ? 'text-success' : 'text-danger';
@@ -197,6 +207,45 @@ export const WatchlistManager = () => {
                 )}
               </tbody>
             </table>
+          </div>
+
+          {/* ── Pagination ── */}
+          <div className="d-flex flex-wrap align-items-center justify-content-between mt-3 pt-3 border-top" style={{ borderColor: 'var(--tp-border)' }}>
+            <div className="d-flex align-items-center gap-3">
+              <span className="text-muted" style={{ fontSize: '0.8rem' }}>
+                Showing <strong style={{ color: 'var(--tp-text)' }}>{(safePage - 1) * pageSize + 1}–{Math.min(safePage * pageSize, wlStocksData.length)}</strong> of <strong style={{ color: 'var(--tp-text)' }}>{wlStocksData.length}</strong> stocks
+              </span>
+              <select
+                className="form-select form-select-sm border-secondary"
+                style={{ width: '80px', fontSize: '0.8rem', backgroundColor: 'var(--tp-bg)', color: 'var(--tp-text)' }}
+                value={pageSize}
+                onChange={e => { setPageSize(Number(e.target.value)); setPage(1); }}
+              >
+                <option value={25}>25</option>
+                <option value={50}>50</option>
+                <option value={100}>100</option>
+              </select>
+            </div>
+
+            <div className="d-flex align-items-center gap-2">
+              <button
+                className="btn btn-sm btn-outline-secondary"
+                disabled={safePage <= 1}
+                onClick={() => setPage(p => Math.max(1, p - 1))}
+              >
+                <FaChevronLeft />
+              </button>
+              <span className="text-muted px-2" style={{ fontSize: '0.85rem' }}>
+                Page <strong style={{ color: 'var(--tp-text)' }}>{safePage}</strong> of {totalPages}
+              </span>
+              <button
+                className="btn btn-sm btn-outline-secondary"
+                disabled={safePage >= totalPages}
+                onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+              >
+                <FaChevronRight />
+              </button>
+            </div>
           </div>
         </div>
       </div>
